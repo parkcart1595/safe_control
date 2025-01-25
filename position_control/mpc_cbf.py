@@ -88,7 +88,7 @@ class MPCCBF:
         _obs = model.set_variable(
             var_type='_tvp', var_name='obs', shape=(5, 3))
 
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:

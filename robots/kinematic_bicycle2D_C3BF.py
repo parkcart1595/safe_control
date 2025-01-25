@@ -1,4 +1,5 @@
 import numpy as np
+import sympy
 import casadi as ca
 
 import matplotlib.pyplot as plt
@@ -20,13 +21,12 @@ def angle_normalize(x):
         raise TypeError(f"Unsupported input type: {type(x)}")
 
 
-class KinematicBicycle2D:
+class KinematicBicycle2D_C3BF:
     def __init__(self, dt, robot_spec):
         '''
             X: [x, y, theta, v]
             U: [a, β] (acceleration, slip angle as control input)
-            cbf: h(x) = ||x-x_obs||^2 - β*d_min^2
-            relative degree: 2
+            c3bf: h(x) = <p_rel, v_rel> + ||p_rel|| * ||v_rel|| * cos(pi)
             
             Equations:
             β = arctan((L_r / L) * tan(δ)) (Slip angle)
@@ -69,6 +69,32 @@ class KinematicBicycle2D:
         L_r = self.robot_spec['rear_ax_dist']
         L = self.robot_spec['wheel_base']
         return np.arctan((L / L_r) * np.tan(beta))
+    
+    def compute_beta(self, X, G, k_theta=0.5):
+        """
+        Compute the slip angle beta based on the current state X and goal G.
+        
+        Parameters:
+            X: Current state [x, y, theta, v].
+            G: Goal state [x, y, theta, v].
+            k_theta: Gain for the heading angle correction.
+
+        Returns:
+            beta: Slip angle in radians.
+        """
+        delta_max = self.robot_spec['delta_max']
+        
+        # Heading angle error
+        theta_d = np.arctan2(G[1, 0] - X[1, 0], G[0, 0] - X[0, 0])
+        error_theta = angle_normalize(theta_d - X[2, 0])
+        
+        # Steering angle
+        delta = np.clip(k_theta * error_theta, -delta_max, delta_max)
+        
+        # Slip angle
+        beta = self.beta(delta)
+        return beta
+
             
     def df_dx(self, X):
         return np.array([
@@ -218,13 +244,13 @@ class KinematicBicycle2D:
                             .translate(rear_axle_x, rear_axle_y) + plt.gca().transData)
 
         # Update front wheel (rotated by steering angle)
-        transform_front = (Affine2D()
+        transform_front = (Affine2D() 
                             .rotate(theta + delta)
                             .translate(front_axle_x, front_axle_y) + plt.gca().transData)
     
         return transform_body, transform_rear, transform_front
     
-    def collsion_cone_barrier(self, X, obs, robot_radius, beta_margin =1.0):
+    def collision_cone_barrier(self, X, obs, robot_radius):
         """
         Compute a Collision Cone Control Barrier Function for the Kinematic Bicycle (continous time).
         
@@ -251,77 +277,66 @@ class KinematicBicycle2D:
             if inside <= 0 -> already in collision -> big negative h
             else
                 cos(phi) = sqrt(dist^2 - R^2) / dist
-                h = p_rel - v_rel + dist * ||v_rel||| * cos(phi)
+                h = <p_rel,  v_rel> + dist * ||v_rel|| * cos(phi)
 
         Then h_dot, dh_dot_dx are found by chain rule. Below we do a small numeric approach for partials.
 
         NOTE: 'beta_margin' can let you enlarge or shrink R -> R_eff = R * beta_margin if you want extra margin.
 
         """
+        theta = X[2, 0]
+        v = X[3, 0]
+        L_r = self.robot_spec['rear_ax_dist']
+
+        obsX = obs[0:2]
+        
+        # Combine radius
+        ego_dim = obs[2][0] + robot_radius # max(c1,c2) + robot_width/2
+
         obs_x, obs_y, obs_r = obs
 
-        # Combine radius
-        R = (robot_radius + obs_r) * beta_margin
+        # # Combine radius
+        # R = (robot_radius + obs_r) * beta_margin
+
+        p_rel = np.array([[obs[0][0] - X[0, 0]], 
+                          [obs[1][0] - X[1, 0]]])
+        v_rel = np.array([[-v * np.cos(theta)], 
+                          [-v * np.sin(theta)]]) # since obstacle is static
+        # v_rel = (c_x_dot - v * np.cos(theta), c_y_dot - v * np.sin(theta))
+
+        p_rel_mag = np.linalg.norm(p_rel)
+        v_rel_mag = np.linalg.norm(v_rel)
+        cos_phi = np.sqrt(p_rel_mag**2 - ego_dim**2) / p_rel_mag
+
+        # p_rel_dot = v_rel + beta * np.array([[v * np.sin(theta)], 
+        #                                    [-v * np.cos(theta)]])
+        # v_rel_dot = np.array([[-np.cos(theta), v * np.sin(theta)],
+        #                      [-np.sin(theta), -v * np.cos(theta)]]) @ np.array([[a],
+        #                                                                        [v / L_r * beta]])
 
         # Compute h
-        h_val = self.c3bf_comput_h(X, R, obs_x, obs_y)
+        h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * cos_phi
 
-        # h_dot = ∇h(X) * f(X)
-        grad_h = self.numeric_gradient_h(X, lambda X_: self.c3bf_compute_h(X_, R, obs_x, obs_y))
-        f_val = self.f(X)
-        h_dot = float(grad_h @ f_val)
+        p_rel_x = p_rel[0, 0]
+        p_rel_y = p_rel[1, 0]
+        v_rel_x = v_rel[0, 0]
+        v_rel_y = v_rel[1, 0]
+        # p_rel_dot_x = p_rel_dot[0, 0]
+        # p_rel_dot_y = p_rel_dot[1, 0]
+        # v_rel_dot_x = v_rel_dot[0, 0]
+        # v_rel_dot_y = v_rel_dot[1, 0]
 
-        # dh_dot_dx = gradient of h_dot wrt X
-        grad_hdot = self.numeric_gradient_h(
-            X,
-            lambda X_: float(self.numeric_gradient_h(X_, lambda X__:
-                self.c3bf_compute_h(X__, R, obs_x, obs_y)) @ self.f(X_))
-        )
+        h_dot_const = (v_rel_mag**2 + # from h_dot1
+                       v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_x * v_rel_x + v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v_rel_y) # from h_dot4
+        h_dot_acc = (-p_rel_x * np.cos(theta) + -p_rel_y * np.sin(theta) + # from h_dot2
+                      -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * np.cos(theta) + -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * np.sin(theta)) # from h_dot3
+        h_dot_beta = (v * np.sin(theta) * v_rel_x + -v * np.cos(theta) * v_rel_y + # from h_dot1
+                       p_rel_x * v**2 / L_r * np.sin(theta) + p_rel_y * -v**2 / L_r * np.cos(theta) + # from h_dot2
+                         np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * v**2 / L_r * np.sin(theta) + -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * v**2 / L_r * np.cos(theta) + # from h_dot3
+                         v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * v * np.sin(theta) + -v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * v * np.cos(theta)) # from h_dot4 
 
-        return h_val, h_dot, grad_hdot
-    
-    def c3bf_compute_h(self, X, R, ox, oy):
+        # Compute Lfh, Lgh
+        Lf_h = h_dot_const
+        Lg_h = np.array([[h_dot_acc, h_dot_beta]])
 
-        x, y, theta, v = X.flatten()
-        # p_rel
-        px = ox - x
-        py = oy - y
-        dist2 = px*px + py*py
-        dist  = np.sqrt(dist2 + 1e-12)
-
-        # v_rel (static obs => obs_vel=0)
-        vxr = -v*np.cos(theta)
-        vyr = -v*np.sin(theta)
-        v_rel_mag = np.sqrt(vxr*vxr + vyr*vyr + 1e-12)
-
-        inside = dist2 - R*R
-        if inside <= 0:
-            # Already in or on the obstacle => negative large
-            return -999.0
-
-        # cos(phi)
-        cos_phi = np.sqrt(inside)/dist
-        # h
-        h_val = px*vxr + py*vyr + dist*v_rel_mag*cos_phi
-        
-        return h_val
-
-    def numeric_gradient_h(self, X, func, eps=1e-5):
-        """
-        Numeric gradient wrt X = [x, y, theta, v]
-        func: a function that takes X->float
-        return shape: (1,4)
-
-        """
-        base_val = func(X)
-        grad = np.zeros((1,4))
-        for i in range(4):
-            Xp = X.copy()
-            Xn = X.copy()
-            Xp[i,0] += eps
-            Xn[i,0] -= eps
-            fp = func(Xp)
-            fn = func(Xn)
-            grad[0,i] = (fp - fn) / (2*eps)
-        
-        return grad
+        return h, Lf_h, Lg_h
