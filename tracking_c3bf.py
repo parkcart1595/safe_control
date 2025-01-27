@@ -277,20 +277,22 @@ class LocalTrackingController:
     def is_collide_unknown(self):
         # if self.unknown_obs is None:
         #     return False
-        robot_radius = self.robot.robot_radius
-        
+        # robot_width = self.robot_spec['body_width']
+        # robot_radius = self.robot.robot_radius
+        robot_max_dim = self.robot_spec['rear_ax_dist']
+
         if self.unknown_obs is not None:
             for obs in self.unknown_obs:
                 # check if the robot collides with the obstacle
                 distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
-                if distance < (obs[2] + robot_radius):
+                if distance < (obs[2] + robot_max_dim):
                     return True
                 
         if self.obs is not None:
             for obs in self.obs:
                 # check if the robot collides with the obstacle
                 distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
-                if distance < (obs[2] + robot_radius):
+                if distance < (obs[2] + robot_max_dim):
                     return True
         return False
 
@@ -392,7 +394,7 @@ class LocalTrackingController:
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-
+        print(f"input: {u}")
         # 5. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:

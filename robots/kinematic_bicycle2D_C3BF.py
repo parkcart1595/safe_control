@@ -69,31 +69,6 @@ class KinematicBicycle2D_C3BF:
         L_r = self.robot_spec['rear_ax_dist']
         L = self.robot_spec['wheel_base']
         return np.arctan((L / L_r) * np.tan(beta))
-    
-    def compute_beta(self, X, G, k_theta=0.5):
-        """
-        Compute the slip angle beta based on the current state X and goal G.
-        
-        Parameters:
-            X: Current state [x, y, theta, v].
-            G: Goal state [x, y, theta, v].
-            k_theta: Gain for the heading angle correction.
-
-        Returns:
-            beta: Slip angle in radians.
-        """
-        delta_max = self.robot_spec['delta_max']
-        
-        # Heading angle error
-        theta_d = np.arctan2(G[1, 0] - X[1, 0], G[0, 0] - X[0, 0])
-        error_theta = angle_normalize(theta_d - X[2, 0])
-        
-        # Steering angle
-        delta = np.clip(k_theta * error_theta, -delta_max, delta_max)
-        
-        # Slip angle
-        beta = self.beta(delta)
-        return beta
 
             
     def df_dx(self, X):
@@ -146,7 +121,7 @@ class KinematicBicycle2D_C3BF:
         X[2, 0] = angle_normalize(X[2, 0])
         return X
    
-    def nominal_input(self, X, G, d_min=0.05, k_theta=0.5, k_a = 1.5, k_v=0.5):
+    def nominal_input(self, X, G, d_min=0.05, k_theta=1.0, k_a = 1.5, k_v=0.5):
         '''
         nominal input for CBF-QP
         '''
@@ -160,7 +135,7 @@ class KinematicBicycle2D_C3BF:
 
         # Steering angle and slip angle
         delta = np.clip(k_theta * error_theta, -delta_max, delta_max)  # Steering angle
-        beta = self.beta(delta)  # Slip angle conversion
+        beta = self.beta(delta) # Slip angle conversion
                 
         if abs(error_theta) > np.deg2rad(90):
             v = 0.0
@@ -168,6 +143,8 @@ class KinematicBicycle2D_C3BF:
             v = min(k_v * distance * np.cos(error_theta), v_max)
             
         a = k_a * (v - X[3, 0])
+
+        print(f"delta: {delta}")
         return np.array([a, beta]).reshape(-1, 1)
     
     def stop(self, X):
@@ -180,46 +157,6 @@ class KinematicBicycle2D_C3BF:
         error_theta = angle_normalize(theta_des - X[2, 0])
         beta = k_theta * error_theta
         return np.array([0.0, beta]).reshape(-1, 1)
-
-    def agent_barrier(self, X, obs, robot_radius, beta=1.1):
-        '''Continuous Time High Order CBF'''
-        obsX = obs[0:2]
-        d_min = obs[2][0] + robot_radius  # obs radius + robot radius
-
-        h = np.linalg.norm(X[0:2] - obsX[0:2])**2 - beta*d_min**2
-        # Lgh is zero => relative degree is 2
-        h_dot = 2 * (X[0:2] - obsX[0:2]).T @ (self.f(X)[0:2])
-
-        df_dx = self.df_dx(X)
-        dh_dot_dx = np.append((2 * self.f(X)[0:2]).T, np.array(
-            [[0, 0]]), axis=1) + 2 * (X[0:2] - obsX[0:2]).T @ df_dx[0:2, :]
-        return h, h_dot, dh_dot_dx
-
-    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.1):
-        '''Discrete Time High Order CBF'''
-        # Dynamics equations for the next states
-        x_k1 = self.step(x_k, u_k)
-        x_k2 = self.step(x_k1, u_k)
-
-        def h(x, obs, robot_radius, beta=1.25):
-            '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
-            x_obs = obs[0]
-            y_obs = obs[1]
-            r_obs = obs[2]
-            d_min = robot_radius + r_obs
-
-            h = (x[0, 0] - x_obs)**2 + (x[1, 0] - y_obs)**2 - beta*d_min**2
-            return h
-
-        h_k2 = h(x_k2, obs, robot_radius, beta)
-        h_k1 = h(x_k1, obs, robot_radius, beta)
-        h_k = h(x_k, obs, robot_radius, beta)
-
-        d_h = h_k1 - h_k
-        dd_h = h_k2 - 2 * h_k1 + h_k
-        # hocbf_2nd_order = h_ddot + (gamma1 + gamma2) * h_dot + (gamma1 * gamma2) * h_k
-
-        return h_k, d_h, dd_h
     
     def render_rigid_body(self, X, U):
         '''
@@ -250,7 +187,7 @@ class KinematicBicycle2D_C3BF:
     
         return transform_body, transform_rear, transform_front
     
-    def collision_cone_barrier(self, X, obs, robot_radius):
+    def collision_cone_barrier(self, X, obs, robot_radius, beta=1.2):
         """
         Compute a Collision Cone Control Barrier Function for the Kinematic Bicycle (continous time).
         
@@ -288,43 +225,40 @@ class KinematicBicycle2D_C3BF:
         v = X[3, 0]
         L_r = self.robot_spec['rear_ax_dist']
 
-        obsX = obs[0:2]
-        
-        # Combine radius
-        ego_dim = obs[2][0] + robot_radius # max(c1,c2) + robot_width/2
-
-        obs_x, obs_y, obs_r = obs
-
-        # # Combine radius
-        # R = (robot_radius + obs_r) * beta_margin
+        # Combine radius R
+        ego_dim = (obs[2][0] +  self.robot_spec['body_width'] / 2) * beta # max(c1,c2) + robot_width/2
 
         p_rel = np.array([[obs[0][0] - X[0, 0]], 
                           [obs[1][0] - X[1, 0]]])
         v_rel = np.array([[-v * np.cos(theta)], 
                           [-v * np.sin(theta)]]) # since obstacle is static
         # v_rel = (c_x_dot - v * np.cos(theta), c_y_dot - v * np.sin(theta))
-
+        print(f"p_rel: {p_rel}, v_rel: {v_rel}")
         p_rel_mag = np.linalg.norm(p_rel)
         v_rel_mag = np.linalg.norm(v_rel)
+        
+        # check for safe buffer distance
+        if p_rel_mag <= ego_dim:
+            h = -1e6
+            Lf_h = -1e6
+            Lg_h = np.zeros((1, 2))
+            return h, Lf_h, Lg_h
+        
+        # Calculate cos_phi safely
         cos_phi = np.sqrt(p_rel_mag**2 - ego_dim**2) / p_rel_mag
+        cos_phi = np.clip(cos_phi, 0, 1)
 
-        # p_rel_dot = v_rel + beta * np.array([[v * np.sin(theta)], 
-        #                                    [-v * np.cos(theta)]])
-        # v_rel_dot = np.array([[-np.cos(theta), v * np.sin(theta)],
-        #                      [-np.sin(theta), -v * np.cos(theta)]]) @ np.array([[a],
-        #                                                                        [v / L_r * beta]])
+        print(f"cos_phi: {cos_phi}")
 
         # Compute h
         h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * cos_phi
-
+        # h = p_rel.T @ v_rel + p_rel_mag * v_rel_mag * cos_phi
+    
         p_rel_x = p_rel[0, 0]
         p_rel_y = p_rel[1, 0]
         v_rel_x = v_rel[0, 0]
         v_rel_y = v_rel[1, 0]
-        # p_rel_dot_x = p_rel_dot[0, 0]
-        # p_rel_dot_y = p_rel_dot[1, 0]
-        # v_rel_dot_x = v_rel_dot[0, 0]
-        # v_rel_dot_y = v_rel_dot[1, 0]
+        print(f"p_rel_mag: {p_rel_mag}, ego_dim: {ego_dim}, diff: {p_rel_mag**2 - ego_dim**2}")
 
         h_dot_const = (v_rel_mag**2 + # from h_dot1
                        v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_x * v_rel_x + v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v_rel_y) # from h_dot4
@@ -333,10 +267,11 @@ class KinematicBicycle2D_C3BF:
         h_dot_beta = (v * np.sin(theta) * v_rel_x + -v * np.cos(theta) * v_rel_y + # from h_dot1
                        p_rel_x * v**2 / L_r * np.sin(theta) + p_rel_y * -v**2 / L_r * np.cos(theta) + # from h_dot2
                          np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * v**2 / L_r * np.sin(theta) + -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * v**2 / L_r * np.cos(theta) + # from h_dot3
-                         v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * v * np.sin(theta) + -v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * v * np.cos(theta)) # from h_dot4 
+                         v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_x * v * np.sin(theta) + -v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v * np.cos(theta)) # from h_dot4 
 
         # Compute Lfh, Lgh
         Lf_h = h_dot_const
         Lg_h = np.array([[h_dot_acc, h_dot_beta]])
-
+        print(f"h: {h}, Lf_h: {Lf_h}, Lg_h: {Lg_h}")
+              
         return h, Lf_h, Lg_h
