@@ -26,7 +26,7 @@ class KinematicBicycle2D_C3BF:
         '''
             X: [x, y, theta, v]
             U: [a, β] (acceleration, slip angle as control input)
-            c3bf: h(x) = <p_rel, v_rel> + ||p_rel|| * ||v_rel|| * cos(pi)
+            c3bf: h(x) = <p_rel, v_rel> + ||p_rel|| * ||v_rel|| * cos(phi)
             
             Equations:
             β = arctan((L_r / L) * tan(δ)) (Slip angle)
@@ -225,13 +225,16 @@ class KinematicBicycle2D_C3BF:
         v = X[3, 0]
         L_r = self.robot_spec['rear_ax_dist']
 
+        obs_vel_x = 0
+        obs_vel_y = 0
+
         # Combine radius R
         ego_dim = (obs[2][0] +  self.robot_spec['body_width'] / 2) * beta # max(c1,c2) + robot_width/2
 
         p_rel = np.array([[obs[0][0] - X[0, 0]], 
                           [obs[1][0] - X[1, 0]]])
-        v_rel = np.array([[-v * np.cos(theta)], 
-                          [-v * np.sin(theta)]]) # since obstacle is static
+        v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
+                          [obs_vel_y - v * np.sin(theta)]]) # since obstacle is static
         # v_rel = (c_x_dot - v * np.cos(theta), c_y_dot - v * np.sin(theta))
         print(f"p_rel: {p_rel}, v_rel: {v_rel}")
         p_rel_mag = np.linalg.norm(p_rel)
@@ -246,7 +249,7 @@ class KinematicBicycle2D_C3BF:
         
         # Calculate cos_phi safely
         cos_phi = np.sqrt(p_rel_mag**2 - ego_dim**2) / p_rel_mag
-        cos_phi = np.clip(cos_phi, 0, 1)
+        cos_phi = np.clip(cos_phi, 0, 1) # 0 < cos(phi) < 1
 
         print(f"cos_phi: {cos_phi}")
 
