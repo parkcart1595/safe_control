@@ -279,7 +279,8 @@ class LocalTrackingController:
         #     return False
         # robot_width = self.robot_spec['body_width']
         # robot_radius = self.robot.robot_radius
-        robot_max_dim = self.robot_spec['rear_ax_dist']
+        # robot_max_dim = self.robot_spec['rear_ax_dist']
+        robot_max_dim = self.robot_spec['body_width'] / 2 #####################################
 
         if self.unknown_obs is not None:
             for obs in self.unknown_obs:
@@ -410,6 +411,9 @@ class LocalTrackingController:
     
         if self.show_animation:
             self.robot.render_plot()
+
+        if self.nearest_obs is not None:
+            self.robot.render_collision_cone(self.robot.X, self.nearest_obs, self.ax)
 
         # 7. Update sensing information
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':

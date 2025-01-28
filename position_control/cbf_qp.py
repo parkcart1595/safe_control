@@ -87,8 +87,12 @@ class CBFQP:
             h, Lf_h, Lg_h = self.robot.collision_cone_barrier(nearest_obs)
             self.A1.value[0,:] = Lg_h
             self.b1.value[0,:] = Lf_h + self.cbf_param['alpha'] * h
-
-
+        
+        # Add h(x) > 0 as a new constraint
+        constraints = self.cbf_controller.constraints
+        h_constraint = (h > 0)
+        constraints.append(h_constraint)
+        
         self.u_ref.value = control_ref['u_ref']
 
         # 4. Solve this yields a new 'self.u'

@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 from shapely.geometry import Polygon, Point, LineString
 from shapely import is_valid_reason
@@ -143,6 +144,7 @@ class BaseRobot:
                           wheel_length, wheel_width,
                           edgecolor='black', facecolor=color, alpha=0.7)
             )
+            self.collision_cone_patch = None
         elif self.robot_spec['model'] == 'Quad2D':
             # Circle for the robot's position
             self.body_circle = ax.add_patch(plt.Circle(
@@ -341,6 +343,73 @@ class BaseRobot:
             if len(self.detected_points) > 0:
                 self.detected_points_scatter.set_offsets(
                     np.array(self.detected_points))
+                
+    def render_collision_cone(self, X, obs, ax):
+        '''
+        Render the collision cone based on h(x)
+        obs: [obs_x, obs_y, obs_r]
+        '''
+
+        # Robot and obstacle positions
+        robot_pos = self.get_position()
+        obs_pos = np.array([obs[0][0], obs[1][0]])
+        obs_radius = obs[2][0]
+
+        theta = X[2, 0]
+        v = X[3, 0]
+
+        obs_vel_x = 0
+        obs_vel_y = 0
+
+        # Combine radius R
+        ego_dim = obs_radius + self.robot_spec['body_width'] # max(c1,c2) + robot_width/2
+
+        p_rel = obs_pos - robot_pos
+        v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
+                          [obs_vel_y - v * np.sin(theta)]]) # since obstacle is static
+
+        p_rel_mag = np.linalg.norm(p_rel)
+        v_rel_mag = np.linalg.norm(v_rel) # Can be used v_rel_plot later
+
+        # Calculate Collision cone angle
+        cos_phi = np.sqrt(p_rel_mag**2 - ego_dim**2) / p_rel_mag
+        phi = np.arcsin(ego_dim / p_rel_mag)
+
+        cone_dir = -p_rel / p_rel_mag
+        rot_matrix_left = np.array([[np.cos(phi), -np.sin(phi)],
+                                    [np.sin(phi),  np.cos(phi)]])
+        rot_matrix_right = np.array([[np.cos(-phi), -np.sin(-phi)],
+                                    [np.sin(-phi),  np.cos(-phi)]])
+        cone_left = rot_matrix_left @ cone_dir.reshape(-1, 1)
+        cone_right = rot_matrix_right @ cone_dir.reshape(-1, 1)
+
+        # Extend cone boundaries
+        cone_left = (robot_pos + 2 * cone_left.flatten()).tolist()
+        cone_right = (robot_pos + 2 * cone_right.flatten()).tolist()
+
+        # Draw the cone
+        cone_points = np.array ([robot_pos.tolist(), cone_left, cone_right])
+        if self.collision_cone_patch is not None:
+            self.collision_cone_patch.remove()
+
+        self.collision_cone_patch = patches.Polygon(
+            cone_points, closed = False, edgecolor = 'black', linestyle = '--', alpha = 0.5
+        )
+        ax.add_patch(self.collision_cone_patch)
+
+        # Plot the relative velocity vector
+        v_rel_start = robot_pos
+        v_rel_end = robot_pos + v_rel.flatten()
+
+        # Remove previous velocity vector if exists
+        if hasattr(self, 'v_rel_arrow') and self.v_rel_arrow is not None:
+            self.v_rel_arrow.remove()
+
+        self.v_rel_arrow = ax.arrow(
+            v_rel_start[0], v_rel_start[1],
+            v_rel[0, 0], v_rel[1, 0],
+            color = 'red', width = 0.02, label = 'Relative Velocity'
+        )
 
     def process_sensing_footprints_visualization(self):
         '''

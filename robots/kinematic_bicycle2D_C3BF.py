@@ -187,7 +187,7 @@ class KinematicBicycle2D_C3BF:
     
         return transform_body, transform_rear, transform_front
     
-    def collision_cone_barrier(self, X, obs, robot_radius, beta=1.2):
+    def collision_cone_barrier(self, X, obs, beta=1.2):
         """
         Compute a Collision Cone Control Barrier Function for the Kinematic Bicycle (continous time).
         
@@ -229,7 +229,8 @@ class KinematicBicycle2D_C3BF:
         obs_vel_y = 0
 
         # Combine radius R
-        ego_dim = (obs[2][0] +  self.robot_spec['body_width'] / 2) * beta # max(c1,c2) + robot_width/2
+        # ego_dim = (obs[2][0] +  self.robot_spec['body_width']) # (* beta) # max(c1,c2) + robot_width/2
+        ego_dim = (obs[2][0] +  0.3) # (* beta) # max(c1,c2) + robot_width/2
 
         p_rel = np.array([[obs[0][0] - X[0, 0]], 
                           [obs[1][0] - X[1, 0]]])
@@ -276,5 +277,5 @@ class KinematicBicycle2D_C3BF:
         Lf_h = h_dot_const
         Lg_h = np.array([[h_dot_acc, h_dot_beta]])
         print(f"h: {h}, Lf_h: {Lf_h}, Lg_h: {Lg_h}")
-              
+        
         return h, Lf_h, Lg_h
