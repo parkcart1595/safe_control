@@ -121,7 +121,7 @@ class KinematicBicycle2D_C3BF:
         X[2, 0] = angle_normalize(X[2, 0])
         return X
    
-    def nominal_input(self, X, G, d_min=0.05, k_theta=1.0, k_a = 1.5, k_v=0.5):
+    def nominal_input(self, X, G, d_min=0.05, k_theta=1.0, k_a=1.5, k_v=0.5):
         '''
         nominal input for CBF-QP
         '''
@@ -214,7 +214,7 @@ class KinematicBicycle2D_C3BF:
             if inside <= 0 -> already in collision -> big negative h
             else
                 cos(phi) = sqrt(dist^2 - R^2) / dist
-                h = <p_rel,  v_rel> + dist * ||v_rel|| * cos(phi)
+                h = <p_rel,  v_rel> + ||p_rel|| * ||v_rel|| * cos(phi)
 
         Then h_dot, dh_dot_dx are found by chain rule. Below we do a small numeric approach for partials.
 
@@ -250,7 +250,7 @@ class KinematicBicycle2D_C3BF:
         
         # Calculate cos_phi safely
         cos_phi = np.sqrt(p_rel_mag**2 - ego_dim**2) / p_rel_mag
-        cos_phi = np.clip(cos_phi, 0, 1) # 0 < cos(phi) < 1
+        # cos_phi = np.clip(cos_phi, 0, 1) # 0 < cos(phi) < 1
 
         print(f"cos_phi: {cos_phi}")
 
@@ -262,16 +262,17 @@ class KinematicBicycle2D_C3BF:
         p_rel_y = p_rel[1, 0]
         v_rel_x = v_rel[0, 0]
         v_rel_y = v_rel[1, 0]
+
         print(f"p_rel_mag: {p_rel_mag}, ego_dim: {ego_dim}, diff: {p_rel_mag**2 - ego_dim**2}")
 
         h_dot_const = (v_rel_mag**2 + # from h_dot1
                        v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_x * v_rel_x + v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v_rel_y) # from h_dot4
         h_dot_acc = (-p_rel_x * np.cos(theta) + -p_rel_y * np.sin(theta) + # from h_dot2
-                      -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * np.cos(theta) + -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * np.sin(theta)) # from h_dot3
-        h_dot_beta = (v * np.sin(theta) * v_rel_x + -v * np.cos(theta) * v_rel_y + # from h_dot1
-                       p_rel_x * v**2 / L_r * np.sin(theta) + p_rel_y * -v**2 / L_r * np.cos(theta) + # from h_dot2
-                         np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * v**2 / L_r * np.sin(theta) + -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * v**2 / L_r * np.cos(theta) + # from h_dot3
-                         v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_x * v * np.sin(theta) + -v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v * np.cos(theta)) # from h_dot4 
+                      -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * np.cos(theta) - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * np.sin(theta)) # from h_dot3
+        h_dot_beta = (v * np.sin(theta) * v_rel_x - v * np.cos(theta) * v_rel_y + # from h_dot1
+                       p_rel_x * v**2 / L_r * np.sin(theta) - p_rel_y * v**2 / L_r * np.cos(theta) + # from h_dot2
+                         np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * v**2 / L_r * np.sin(theta) - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * v**2 / L_r * np.cos(theta) + # from h_dot3
+                         v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_x * v * np.sin(theta) - v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v * np.cos(theta)) # from h_dot4 
 
         # Compute Lfh, Lgh
         Lf_h = h_dot_const
