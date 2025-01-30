@@ -279,7 +279,7 @@ class LocalTrackingController:
         #     return False
         # robot_width = self.robot_spec['body_width']
         # robot_radius = self.robot.robot_radius
-        robot_max_dim = 0 # self.robot_spec['rear_ax_dist']
+        robot_max_dim = self.robot_spec['rear_ax_dist']
 
         if self.unknown_obs is not None:
             for obs in self.unknown_obs:

@@ -144,7 +144,7 @@ class KinematicBicycle2D_C3BF:
             
         a = k_a * (v - X[3, 0])
 
-        print(f"delta: {delta}")
+        print(f"a: {a}, beta: {beta}")
         return np.array([a, beta]).reshape(-1, 1)
     
     def stop(self, X):

@@ -384,13 +384,15 @@ class BaseRobot:
         cone_left = (robot_pos + 2 * cone_left.flatten()).tolist()
         cone_right = (robot_pos + 2 * cone_right.flatten()).tolist()
 
+        print(f"Robot pos: {robot_pos}, Cone Left: {cone_left}, Cone Right: {cone_right}")
+
         # Draw the cone
         cone_points = np.array ([robot_pos.tolist(), cone_left, cone_right])
         if self.collision_cone_patch is not None:
             self.collision_cone_patch.remove()
 
         self.collision_cone_patch = patches.Polygon(
-            cone_points, closed = False, edgecolor = 'black', linestyle = '--', alpha = 0.5
+            cone_points, closed = True, edgecolor = 'black', linestyle = '--', alpha = 0.5
         )
         ax.add_patch(self.collision_cone_patch)
 
