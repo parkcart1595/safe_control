@@ -99,19 +99,19 @@ class BaseRobot:
                 from robots.kinematic_bicycle2D import KinematicBicycle2D
             self.robot = KinematicBicycle2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
-        elif self.robot_spec['model'] == 'Quad2D':
-            try:
-                from quad2D import Quad2D
-            except ImportError:
-                from robots.quad2D import Quad2D
-            self.robot = Quad2D(dt, robot_spec)
-            self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
             try:
                 from kinematic_bicycle2D_C3BF import KinematicBicycle2D_C3BF
             except ImportError:
                 from robots.kinematic_bicycle2D_C3BF import KinematicBicycle2D_C3BF
             self.robot = KinematicBicycle2D_C3BF(dt, robot_spec)
+            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'Quad2D':
+            try:
+                from quad2D import Quad2D
+            except ImportError:
+                from robots.quad2D import Quad2D
+            self.robot = Quad2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
 
         else:
@@ -267,9 +267,6 @@ class BaseRobot:
 
     def agent_barrier_dt(self, x_k, u_k, obs):
         return self.robot.agent_barrier_dt(x_k, u_k, obs, self.robot_radius)
-    
-    def collision_cone_barrier(self, obs):
-        return self.robot.collision_cone_barrier(self.X, obs, self.robot_radius)
 
     def step(self, U, U_att=None):
         # wrap step function
@@ -687,7 +684,7 @@ if __name__ == "__main__":
 
     for i in range(num_steps):
         u_ref.value = robot.nominal_input(goal)
-        if robot_spec['model'] in ['SingleIntegrator', 'Unicycle2D', 'KinematicBicycle2D']:
+        if robot_spec['model'] in ['SingleIntegrator', 'Unicycle2D', 'KinematicBicycle2D',  'KinematicBicycle2D_C3BF']:
             alpha = 1.0  # 10.0
             h, dh_dx = robot.agent_barrier(obs)
             A1.value[0, :] = dh_dx @ robot.g()
@@ -699,11 +696,6 @@ if __name__ == "__main__":
             A1.value[0, :] = dh_dot_dx @ robot.g()
             b1.value[0, :] = dh_dot_dx @ robot.f() + (alpha1+alpha2) * \
                 h_dot + alpha1*alpha2*h
-        elif robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            alpha = 1.0
-            h, Lf_h, Lg_h = robot.collision_cone_barrier(obs)
-            A1.value[0, :] = Lg_h
-            b1.value[0, :] = Lf_h + alpha * h
         # cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
         cbf_controller.solve(solver=cp.GUROBI)
 

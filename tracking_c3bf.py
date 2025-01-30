@@ -64,14 +64,14 @@ class LocalTrackingController:
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            if X0.shape[0] == 3:  # set initial velocity to 0.0
+                X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] == 'Quad2D':
             if X0.shape[0] in [2, 3]: # only initialize the x,z position if don't provide the full state
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, 0.0, 0.0]).reshape(-1, 1)
             elif X0.shape[0] != 6:
                 raise ValueError("Invalid initial state dimension for Quad2D")
-        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            if X0.shape[0] == 3:  # set initial velocity to 0.0
-                X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
             
         self.u_att = None
 
@@ -279,8 +279,7 @@ class LocalTrackingController:
         #     return False
         # robot_width = self.robot_spec['body_width']
         # robot_radius = self.robot.robot_radius
-        # robot_max_dim = self.robot_spec['rear_ax_dist']
-        robot_max_dim = self.robot_spec['body_width'] / 2 #####################################
+        robot_max_dim = 0 # self.robot_spec['rear_ax_dist']
 
         if self.unknown_obs is not None:
             for obs in self.unknown_obs:
@@ -373,7 +372,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'Quad2D', 'KinematicBicycle2D_C3BF']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()

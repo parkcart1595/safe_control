@@ -187,22 +187,17 @@ class KinematicBicycle2D_C3BF:
     
         return transform_body, transform_rear, transform_front
     
-    def collision_cone_barrier(self, X, obs, beta=1.2):
+    def agent_barrier(self, X, obs, robot_radius, beta=1.0):
         """
         Compute a Collision Cone Control Barrier Function for the Kinematic Bicycle (continous time).
         
-        obs: (obs_x, obs_y, obs_r)
-            We'll treat the obstacle as a circle of radius obs_r (static).
-            We also inflate by 'robot_radius' to get total R.
         X: [x, y, theta, v]
         return: (h, h_dot, dh_dot_dx)
             h           : scalar, the C3BF value
-            h_dot       : scalar, time derivative of h under f(x) (i.e. Lf h)
-            dh_dot_dx   : (1,4) array, derivative of h_dot wrt x => used to get Lg h = dh_dot_dx*g(x)
+            dh_dx       : (1, 4) array, gradient of h
 
         The barrier is of "relative degree of 1" if done in velocity space, but for a kinematic bicycle, we can follow a pattern similar to agent_barrier:
-            h_dot = ∂h/∂x ⋅ f(x)
-            Lg h = ∂h_dot/∂x ⋅ g(x)
+            h_dot = ∂h/∂x ⋅ f(x) + ∂h_dot/∂x ⋅ g(x) ⋅ u
 
         Define h from the collision cone idea:
             p_rel = [obs_x - x, obs_y - y]
@@ -211,16 +206,12 @@ class KinematicBicycle2D_C3BF:
             R = robot_radius + obs_r (combined)
             inside = dist^2 - R^2
 
-            if inside <= 0 -> already in collision -> big negative h
+            if inside <= 0 -> already in collision possibility -> big negative h
             else
                 cos(phi) = sqrt(dist^2 - R^2) / dist
                 h = <p_rel,  v_rel> + ||p_rel|| * ||v_rel|| * cos(phi)
-
-        Then h_dot, dh_dot_dx are found by chain rule. Below we do a small numeric approach for partials.
-
-        NOTE: 'beta_margin' can let you enlarge or shrink R -> R_eff = R * beta_margin if you want extra margin.
-
         """
+
         theta = X[2, 0]
         v = X[3, 0]
         L_r = self.robot_spec['rear_ax_dist']
@@ -229,54 +220,131 @@ class KinematicBicycle2D_C3BF:
         obs_vel_y = 0
 
         # Combine radius R
-        # ego_dim = (obs[2][0] +  self.robot_spec['body_width']) # (* beta) # max(c1,c2) + robot_width/2
-        ego_dim = (obs[2][0] +  0.3) # (* beta) # max(c1,c2) + robot_width/2
+        ego_dim = (obs[2][0] + self.robot_spec['body_width']) * beta   # Total collision radius
 
+        # Compute relative position and velocity
         p_rel = np.array([[obs[0][0] - X[0, 0]], 
-                          [obs[1][0] - X[1, 0]]])
+                        [obs[1][0] - X[1, 0]]])
         v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
-                          [obs_vel_y - v * np.sin(theta)]]) # since obstacle is static
-        # v_rel = (c_x_dot - v * np.cos(theta), c_y_dot - v * np.sin(theta))
-        print(f"p_rel: {p_rel}, v_rel: {v_rel}")
+                        [obs_vel_y - v * np.sin(theta)]])  # Since the obstacle is static
+
         p_rel_mag = np.linalg.norm(p_rel)
         v_rel_mag = np.linalg.norm(v_rel)
-        
-        # check for safe buffer distance
-        if p_rel_mag <= ego_dim:
-            h = -1e6
-            Lf_h = -1e6
-            Lg_h = np.zeros((1, 2))
-            return h, Lf_h, Lg_h
-        
-        # Calculate cos_phi safely
+
+        # Ensure safe buffer distance
+        # if p_rel_mag <= ego_dim:
+        #     h = -1e6
+        #     dh_dx = np.zeros((1, 4))
+        #     return h, dh_dx
+
+        # Compute cos_phi safely
         cos_phi = np.sqrt(p_rel_mag**2 - ego_dim**2) / p_rel_mag
-        # cos_phi = np.clip(cos_phi, 0, 1) # 0 < cos(phi) < 1
 
-        print(f"cos_phi: {cos_phi}")
-
-        # Compute h
+        # Compute h (C3BF)
         h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * cos_phi
-        # h = p_rel.T @ v_rel + p_rel_mag * v_rel_mag * cos_phi
-    
-        p_rel_x = p_rel[0, 0]
-        p_rel_y = p_rel[1, 0]
-        v_rel_x = v_rel[0, 0]
-        v_rel_y = v_rel[1, 0]
-
-        print(f"p_rel_mag: {p_rel_mag}, ego_dim: {ego_dim}, diff: {p_rel_mag**2 - ego_dim**2}")
-
-        h_dot_const = (v_rel_mag**2 + # from h_dot1
-                       v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_x * v_rel_x + v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v_rel_y) # from h_dot4
-        h_dot_acc = (-p_rel_x * np.cos(theta) + -p_rel_y * np.sin(theta) + # from h_dot2
-                      -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * np.cos(theta) - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * np.sin(theta)) # from h_dot3
-        h_dot_beta = (v * np.sin(theta) * v_rel_x - v * np.cos(theta) * v_rel_y + # from h_dot1
-                       p_rel_x * v**2 / L_r * np.sin(theta) - p_rel_y * v**2 / L_r * np.cos(theta) + # from h_dot2
-                         np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * v**2 / L_r * np.sin(theta) - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * v**2 / L_r * np.cos(theta) + # from h_dot3
-                         v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_x * v * np.sin(theta) - v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v * np.cos(theta)) # from h_dot4 
-
-        # Compute Lfh, Lgh
-        Lf_h = h_dot_const
-        Lg_h = np.array([[h_dot_acc, h_dot_beta]])
-        print(f"h: {h}, Lf_h: {Lf_h}, Lg_h: {Lg_h}")
         
-        return h, Lf_h, Lg_h
+        # Compute ∂h/∂x (dh_dx)
+        dh_dx = np.zeros((1, 4))
+
+        # ∂h/∂x for x and y (position)
+        dh_dx[0, 0] = -v_rel[0, 0] + (p_rel[0, 0] * v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2))
+        dh_dx[0, 1] = -v_rel[1, 0] + (p_rel[1, 0] * v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2))
+
+        # ∂h/∂theta
+        dh_dx[0, 2] = v * (p_rel[0, 0] * np.sin(theta) - p_rel[1, 0] * np.cos(theta)) \
+                    - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
+                    (v_rel[0, 0] * np.sin(theta) + v_rel[1, 0] * np.cos(theta))
+
+        # ∂h/∂v
+        dh_dx[0, 3] = -np.cos(theta) * p_rel[0, 0] - np.sin(theta) * p_rel[1, 0] \
+                    + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
+                    (v_rel[0, 0] * np.cos(theta) + v_rel[1, 0] * np.sin(theta))
+
+        print(f"dhdx: {dh_dx}")
+        return h, dh_dx
+
+
+    # def collision_cone_barrier(self, X, obs, beta=2.0):
+    #     """
+    #     Compute a Collision Cone Control Barrier Function for the Kinematic Bicycle (continous time).
+        
+    #     X: [x, y, theta, v]
+    #     return: (h, h_dot, dh_dot_dx)
+    #         h           : scalar, the C3BF value
+    #         h_dot       : scalar, time derivative of h under f(x) and g(x)u
+
+    #     The barrier is of "relative degree of 1" if done in velocity space, but for a kinematic bicycle, we can follow a pattern similar to agent_barrier:
+    #         h_dot = ∂h/∂x ⋅ f(x) + ∂h_dot/∂x ⋅ g(x) ⋅ u
+
+    #     Define h from the collision cone idea:
+    #         p_rel = [obs_x - x, obs_y - y]
+    #         v_rel = [-v_cos(theta), -v_sin(theta)] (since obstacle is static)
+    #         dist = ||p_rel||
+    #         R = robot_radius + obs_r (combined)
+    #         inside = dist^2 - R^2
+
+    #         if inside <= 0 -> already in collision possibility -> big negative h
+    #         else
+    #             cos(phi) = sqrt(dist^2 - R^2) / dist
+    #             h = <p_rel,  v_rel> + ||p_rel|| * ||v_rel|| * cos(phi)
+    #     """
+
+    #     theta = X[2, 0]
+    #     v = X[3, 0]
+    #     L_r = self.robot_spec['rear_ax_dist']
+
+    #     obs_vel_x = 0
+    #     obs_vel_y = 0
+
+    #     # Combine radius R
+    #     # ego_dim = (obs[2][0] +  0.3]) # (* beta) # max(c1,c2) + robot_width/2
+    #     ego_dim = obs[2][0] + self.robot_spec['body_width'] # (* beta) # max(c1,c2) + robot_width/2
+
+    #     p_rel = np.array([[obs[0][0] - X[0, 0]], 
+    #                       [obs[1][0] - X[1, 0]]])
+    #     v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
+    #                       [obs_vel_y - v * np.sin(theta)]]) # since obstacle is static
+    #     # v_rel = (c_x_dot - v * np.cos(theta), c_y_dot - v * np.sin(theta))
+    #     print(f"p_rel: {p_rel}, v_rel: {v_rel}")
+    #     p_rel_mag = np.linalg.norm(p_rel)
+    #     v_rel_mag = np.linalg.norm(v_rel)
+        
+    #     # check for safe buffer distance
+    #     # if p_rel_mag <= ego_dim:
+    #     #      h = -1e6
+    #     #      Lf_h = -1e6
+    #     #      Lg_h = np.zeros((1, 2))
+    #     #      return h, Lf_h, Lg_h
+        
+    #     # Calculate cos_phi safely
+    #     cos_phi = np.sqrt(p_rel_mag**2 - ego_dim**2) / p_rel_mag
+    #     # cos_phi = np.clip(cos_phi, 0, 1) # 0 < cos(phi) < 1
+
+    #     # print(f"cos_phi: {cos_phi}")
+
+    #     # Compute h
+    #     h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * cos_phi
+    #     # h = p_rel.T @ v_rel + p_rel_mag * v_rel_mag * cos_phi
+    
+    #     p_rel_x = p_rel[0, 0]
+    #     p_rel_y = p_rel[1, 0]
+    #     v_rel_x = v_rel[0, 0]
+    #     v_rel_y = v_rel[1, 0]
+
+    #     # print(f"p_rel_mag: {p_rel_mag}, ego_dim: {ego_dim}, diff: {p_rel_mag**2 - ego_dim**2}")
+    #     print(f"sqrt: {np.sqrt(p_rel_mag**2 - ego_dim**2)}")
+    #     h_dot_const = (v_rel_mag**2 + # from h_dot1
+    #                    v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2 ) * p_rel_x * v_rel_x + v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v_rel_y) # from h_dot4
+    #     h_dot_acc = (-p_rel_x * np.cos(theta) + -p_rel_y * np.sin(theta) + # from h_dot2
+    #                   -np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * np.cos(theta) - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * np.sin(theta)) # from h_dot3
+    #     h_dot_beta = (v * np.sin(theta) * v_rel_x - v * np.cos(theta) * v_rel_y + # from h_dot1
+    #                    p_rel_x * v**2 / L_r * np.sin(theta) - p_rel_y * v**2 / L_r * np.cos(theta) + # from h_dot2
+    #                      np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_x * v**2 / L_r * np.sin(theta) - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v_rel_y * v**2 / L_r * np.cos(theta) + # from h_dot3
+    #                      v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_x * v * np.sin(theta) - v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2) * p_rel_y * v * np.cos(theta)) # from h_dot4 
+
+    #     # Compute Lfh, Lgh
+    #     Lf_h = h_dot_const
+    #     Lg_h = np.array([[h_dot_acc, h_dot_beta]])
+    #     print(f"h: {h}, Lf_h: {Lf_h}, Lg_h: {Lg_h}")
+        
+    #     return h, Lf_h, Lg_h
