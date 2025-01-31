@@ -238,7 +238,6 @@ class BaseRobot:
         elif self.robot_spec['model'] in ['Unicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
-            # print(f'X: {self.X} | goal: {goal} | d_min: {d_min} | k_omega: {k_omega} | k_a: {k_a} | k_v: {k_v}')
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)

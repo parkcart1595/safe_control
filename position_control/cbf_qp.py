@@ -81,7 +81,6 @@ class CBFQP:
             self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
             # print(f"lgh: {dh_dx @ self.robot.g()}")
             # print(f"lfh + k(h): {dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h}")
-
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
             h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
@@ -92,7 +91,7 @@ class CBFQP:
         # 4. Solve this yields a new 'self.u'
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
 
-        print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
+        # print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
         print(f'self.u_ref.value: {self.u_ref.value}')
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status

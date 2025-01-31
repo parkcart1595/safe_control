@@ -230,6 +230,11 @@ class KinematicBicycle2D_C3BF:
                         [obs[1][0] - X[1, 0]]])
         v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
                         [obs_vel_y - v * np.sin(theta)]])  # Since the obstacle is static
+        
+        p_rel_x = p_rel[0, 0]
+        p_rel_y = p_rel[1, 0]
+        v_rel_x = v_rel[0, 0]
+        v_rel_y = v_rel[1, 0]
 
         p_rel_mag = np.linalg.norm(p_rel)
         v_rel_mag = np.linalg.norm(v_rel)
@@ -249,22 +254,27 @@ class KinematicBicycle2D_C3BF:
         # Compute ∂h/∂x (dh_dx)
         dh_dx = np.zeros((1, 4))
 
-        # ∂h/∂x for x and y (position)
-        dh_dx[0, 0] = -v_rel[0, 0] + (p_rel[0, 0] * v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2))
-        dh_dx[0, 1] = -v_rel[1, 0] + (p_rel[1, 0] * v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2))
 
-        # ∂h/∂theta
+        dh_dx[0, 0] = -obs_vel_x - v_rel_mag * p_rel_x / np.sqrt(p_rel_mag**2 - ego_dim**2)
+        dh_dx[0, 1] = -obs_vel_y - v_rel_mag * p_rel_y / np.sqrt(p_rel_mag**2 - ego_dim**2)
+        dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta))
+        dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta)))
+        # ∂h/∂x for x and y (position)
+        # dh_dx[0, 0] = -v_rel[0, 0] + (p_rel[0, 0] * v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2))
+        # dh_dx[0, 1] = -v_rel[1, 0] + (p_rel[1, 0] * v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2))
+
+        # # ∂h/∂theta
+        # # dh_dx[0, 2] = v * (p_rel[0, 0] * np.sin(theta) - p_rel[1, 0] * np.cos(theta)) \
+        # #             - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
+        # #             (v_rel[0, 0] * np.sin(theta) + v_rel[1, 0] * np.cos(theta))
         # dh_dx[0, 2] = v * (p_rel[0, 0] * np.sin(theta) - p_rel[1, 0] * np.cos(theta)) \
         #             - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
         #             (v_rel[0, 0] * np.sin(theta) + v_rel[1, 0] * np.cos(theta))
-        dh_dx[0, 2] = v * (p_rel[0, 0] * np.sin(theta) - p_rel[1, 0] * np.cos(theta)) \
-                    - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
-                    (v_rel[0, 0] * np.sin(theta) + v_rel[1, 0] * np.cos(theta))
 
-        # ∂h/∂v
-        dh_dx[0, 3] = -np.cos(theta) * p_rel[0, 0] - np.sin(theta) * p_rel[1, 0] \
-                    + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
-                    (v_rel[0, 0] * np.cos(theta) + v_rel[1, 0] * np.sin(theta))
+        # # ∂h/∂v
+        # dh_dx[0, 3] = -np.cos(theta) * p_rel[0, 0] - np.sin(theta) * p_rel[1, 0] \
+        #             + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
+        #             (v_rel[0, 0] * np.cos(theta) + v_rel[1, 0] * np.sin(theta))
 
         print(f"dhdx: {dh_dx}")
         return h, dh_dx
