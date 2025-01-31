@@ -135,19 +135,19 @@ class KinematicBicycle2D_C3BF:
 
         # Steering angle and slip angle
         delta = np.clip(k_theta * error_theta, -delta_max, delta_max)  # Steering angle
-        print(f'k_theta: {k_theta} | error_theta: {error_theta} | v: {delta_max}')
+        # print(f'k_theta: {k_theta} | error_theta: {error_theta} | v: {delta_max}')
         beta = self.beta(delta) # Slip angle conversion
                 
         if abs(error_theta) > np.deg2rad(90):
             v = 0.0
         else:
             v = min(k_v * distance * np.cos(error_theta), v_max)
-        print(f'G: {G} | vmax: {v_max} | delta_max: {delta_max} | distance: {distance} | theta_d: {theta_d} | error_theta: {error_theta}')
-        print(f'delta: {delta} | beta: {beta} | v: {v}')
+        # print(f'G: {G} | vmax: {v_max} | delta_max: {delta_max} | distance: {distance} | theta_d: {theta_d} | error_theta: {error_theta}')
+        # print(f'delta: {delta} | beta: {beta} | v: {v}')
 
         a = k_a * (v - X[3, 0])
 
-        print(f"a: {a}, beta: {beta}")
+        # print(f"a: {a}, beta: {beta}")
         return np.array([a, beta]).reshape(-1, 1)
     
     def stop(self, X):
@@ -223,14 +223,14 @@ class KinematicBicycle2D_C3BF:
         obs_vel_y = 0
 
         # Combine radius R
-        ego_dim = (obs[2][0] + self.robot_spec['body_width']) * beta   # Total collision radius
+        ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision radius
 
         # Compute relative position and velocity
         p_rel = np.array([[obs[0][0] - X[0, 0]], 
                         [obs[1][0] - X[1, 0]]])
         v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
                         [obs_vel_y - v * np.sin(theta)]])  # Since the obstacle is static
-        
+        print(f"prel: {p_rel}")
         p_rel_x = p_rel[0, 0]
         p_rel_y = p_rel[1, 0]
         v_rel_x = v_rel[0, 0]
@@ -238,6 +238,8 @@ class KinematicBicycle2D_C3BF:
 
         p_rel_mag = np.linalg.norm(p_rel)
         v_rel_mag = np.linalg.norm(v_rel)
+        # print(f"p_rel: {p_rel} | p_rel_mag: {p_rel_mag}")
+        # print(f"ego_dim: {ego_dim} | p_rel_mag: {p_rel_mag}")
 
         # Ensure safe buffer distance
         # if p_rel_mag <= ego_dim:
@@ -276,7 +278,6 @@ class KinematicBicycle2D_C3BF:
         #             + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
         #             (v_rel[0, 0] * np.cos(theta) + v_rel[1, 0] * np.sin(theta))
 
-        print(f"dhdx: {dh_dx}")
         return h, dh_dx
 
 
