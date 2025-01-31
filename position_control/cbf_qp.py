@@ -79,21 +79,24 @@ class CBFQP:
             h, dh_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
+            # print(f"lgh: {dh_dx @ self.robot.g()}")
+            # print(f"lfh + k(h): {dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h}")
+
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
             h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
 
         self.u_ref.value = control_ref['u_ref']
-
+        # print(f"selfurefval: {self.u_ref.value}")
         # 4. Solve this yields a new 'self.u'
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
 
-        # print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
-        
+        print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
+        print(f'self.u_ref.value: {self.u_ref.value}')
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
         # if self.cbf_controller.status != 'optimal':
         #     raise QPError("CBF-QP optimization failed")
-
+        print(f"u: {self.u.value}")
         return self.u.value

@@ -135,13 +135,16 @@ class KinematicBicycle2D_C3BF:
 
         # Steering angle and slip angle
         delta = np.clip(k_theta * error_theta, -delta_max, delta_max)  # Steering angle
+        print(f'k_theta: {k_theta} | error_theta: {error_theta} | v: {delta_max}')
         beta = self.beta(delta) # Slip angle conversion
                 
         if abs(error_theta) > np.deg2rad(90):
             v = 0.0
         else:
             v = min(k_v * distance * np.cos(error_theta), v_max)
-            
+        print(f'G: {G} | vmax: {v_max} | delta_max: {delta_max} | distance: {distance} | theta_d: {theta_d} | error_theta: {error_theta}')
+        print(f'delta: {delta} | beta: {beta} | v: {v}')
+
         a = k_a * (v - X[3, 0])
 
         print(f"a: {a}, beta: {beta}")
@@ -251,6 +254,9 @@ class KinematicBicycle2D_C3BF:
         dh_dx[0, 1] = -v_rel[1, 0] + (p_rel[1, 0] * v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2))
 
         # ∂h/∂theta
+        # dh_dx[0, 2] = v * (p_rel[0, 0] * np.sin(theta) - p_rel[1, 0] * np.cos(theta)) \
+        #             - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
+        #             (v_rel[0, 0] * np.sin(theta) + v_rel[1, 0] * np.cos(theta))
         dh_dx[0, 2] = v * (p_rel[0, 0] * np.sin(theta) - p_rel[1, 0] * np.cos(theta)) \
                     - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
                     (v_rel[0, 0] * np.sin(theta) + v_rel[1, 0] * np.cos(theta))
