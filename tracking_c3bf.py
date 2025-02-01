@@ -414,8 +414,12 @@ class LocalTrackingController:
         if self.show_animation:
             self.robot.render_plot()
 
-        if self.nearest_obs is not None:
-            self.robot.render_collision_cone(self.robot.X, self.nearest_obs, self.ax)
+        if self.control_type == 'cbf_qp' and self.nearest_obs is not None:
+            self.robot.render_collision_cone(self.robot.X, [self.nearest_obs], self.ax, self.control_type)
+
+        if self.control_type == "mpc_cbf" and self.nearest_multi_obs is not None:
+            self.robot.render_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax, self.control_type)
+
 
         # 7. Update sensing information
         if 'sensor' in self.robot_spec and self.robot_spec['sensor'] == 'rgbd':

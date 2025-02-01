@@ -279,9 +279,6 @@ class KinematicBicycle2D_C3BF:
 
         h_k1 = h(x_k1, obs, robot_radius, beta)
         h_k = h(x_k, obs, robot_radius, beta)
-
-        print(f"h_k1 value: {h_k1}")
-        print(f"h_k value: {h_k}")
         
         d_h = h_k1 - h_k
         # cbf = h_dot + gamma1 * h_k
