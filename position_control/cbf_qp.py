@@ -87,15 +87,16 @@ class CBFQP:
         print(f"u: {self.u.value}")
         print(f"lgh: {dh_dx @ self.robot.g()}")
         print(f"lfh + k(h): {dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h}")
-        # print(f"constraint: {dh_dx @ self.robot.g() @ self.u.value + dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h}")
+        
         self.u_ref.value = control_ref['u_ref']
-        # print(f"selfurefval: {self.u_ref.value}")
         print(f"u2: {self.u.value}")
+
         # 4. Solve this yields a new 'self.u'
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
         print(f"u3: {self.u.value}")
+
         # print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
-        # print(f'self.u_ref.value: {self.u_ref.value}')
+
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
         print(f"u4: {self.u.value}")

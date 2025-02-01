@@ -206,13 +206,7 @@ class KinematicBicycle2D_C3BF:
             p_rel = [obs_x - x, obs_y - y]
             v_rel = [-v_cos(theta), -v_sin(theta)] (since obstacle is static)
             dist = ||p_rel||
-            R = robot_radius + obs_r (combined)
-            inside = dist^2 - R^2
-
-            if inside <= 0 -> already in collision possibility -> big negative h
-            else
-                cos(phi) = sqrt(dist^2 - R^2) / dist
-                h = <p_rel,  v_rel> + ||p_rel|| * ||v_rel|| * cos(phi)
+            R = robot_radius + obs_r
         """
 
         theta = X[2, 0]
@@ -241,12 +235,6 @@ class KinematicBicycle2D_C3BF:
         # print(f"p_rel: {p_rel} | p_rel_mag: {p_rel_mag}")
         # print(f"ego_dim: {ego_dim} | p_rel_mag: {p_rel_mag}")
 
-        # Ensure safe buffer distance
-        # if p_rel_mag <= ego_dim:
-        #     h = -1e6
-        #     dh_dx = np.zeros((1, 4))
-        #     return h, dh_dx
-
         # Compute cos_phi safely
         cos_phi = np.sqrt(p_rel_mag**2 - ego_dim**2) / p_rel_mag
 
@@ -261,27 +249,11 @@ class KinematicBicycle2D_C3BF:
         dh_dx[0, 1] = -obs_vel_y - v_rel_mag * p_rel_y / np.sqrt(p_rel_mag**2 - ego_dim**2)
         dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta))
         dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta)))
-        # ∂h/∂x for x and y (position)
-        # dh_dx[0, 0] = -v_rel[0, 0] + (p_rel[0, 0] * v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2))
-        # dh_dx[0, 1] = -v_rel[1, 0] + (p_rel[1, 0] * v_rel_mag / np.sqrt(p_rel_mag**2 - ego_dim**2))
-
-        # # ∂h/∂theta
-        # # dh_dx[0, 2] = v * (p_rel[0, 0] * np.sin(theta) - p_rel[1, 0] * np.cos(theta)) \
-        # #             - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
-        # #             (v_rel[0, 0] * np.sin(theta) + v_rel[1, 0] * np.cos(theta))
-        # dh_dx[0, 2] = v * (p_rel[0, 0] * np.sin(theta) - p_rel[1, 0] * np.cos(theta)) \
-        #             - np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
-        #             (v_rel[0, 0] * np.sin(theta) + v_rel[1, 0] * np.cos(theta))
-
-        # # ∂h/∂v
-        # dh_dx[0, 3] = -np.cos(theta) * p_rel[0, 0] - np.sin(theta) * p_rel[1, 0] \
-        #             + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * \
-        #             (v_rel[0, 0] * np.cos(theta) + v_rel[1, 0] * np.sin(theta))
 
         return h, dh_dx
 
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
-        '''Discrete Time High Order CBF'''
+        '''Discrete Time High Order C3BF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k)
 
@@ -296,15 +268,15 @@ class KinematicBicycle2D_C3BF:
             # Combine radius R
             ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision radius
             # Compute relative position and velocity
-            p_rel = ca.vertcat(obs[0][0] - x[0, 0], obs[1][0] - x[1, 0])  # CasADi 지원
+            p_rel = ca.vertcat(obs[0][0] - x[0, 0], obs[1][0] - x[1, 0])  # Use CasADi
             v_rel = ca.vertcat(obs_vel_x - v * ca.cos(theta), obs_vel_y - v * ca.sin(theta))
 
             p_rel_mag = ca.norm_2(p_rel)
             v_rel_mag = ca.norm_2(v_rel)
 
             h = ca.if_else(
-                p_rel_mag <= ego_dim,  # 조건식
-                -1e6,  # True일 때 값 (충돌 위험)
+                p_rel_mag <= ego_dim,
+                -1e6,
                 (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag  # False일 때 계산
                 )
             return h
@@ -312,6 +284,9 @@ class KinematicBicycle2D_C3BF:
         h_k1 = h(x_k1, obs, robot_radius, beta)
         h_k = h(x_k, obs, robot_radius, beta)
 
+        print(f"h_k1 value: {h_k1}")  # 실제 값이 나오는지 확인
+        print(f"h_k value: {h_k}")  # 실제 값이 나오는지 확인
+        
         d_h = h_k1 - h_k
         # cbf = h_dot + gamma1 * h_k
 
