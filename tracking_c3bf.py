@@ -660,7 +660,7 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
-    single_agent_main('cbf_qp')
+    single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')

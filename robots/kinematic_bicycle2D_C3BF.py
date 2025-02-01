@@ -116,8 +116,8 @@ class KinematicBicycle2D_C3BF:
                 [1, 0]
             ])
 
-    def step(self, X, U):
-        X = X + (self.f(X) + self.g(X) @ U) * self.dt
+    def step(self, X, U, casadi=False):
+        X = X + (self.f(X, casadi) + self.g(X, casadi) @ U) * self.dt
         X[2, 0] = angle_normalize(X[2, 0])
         return X
    
@@ -244,7 +244,6 @@ class KinematicBicycle2D_C3BF:
         # Compute ∂h/∂x (dh_dx)
         dh_dx = np.zeros((1, 4))
 
-
         dh_dx[0, 0] = -obs_vel_x - v_rel_mag * p_rel_x / np.sqrt(p_rel_mag**2 - ego_dim**2)
         dh_dx[0, 1] = -obs_vel_y - v_rel_mag * p_rel_y / np.sqrt(p_rel_mag**2 - ego_dim**2)
         dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta))
@@ -255,7 +254,7 @@ class KinematicBicycle2D_C3BF:
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
         '''Discrete Time High Order C3BF'''
         # Dynamics equations for the next states
-        x_k1 = self.step(x_k, u_k)
+        x_k1 = self.step(x_k, u_k, casadi=True)
 
         def h(x, obs, robot_radius, beta=1.01):
             '''Computes C3BF h(x) = <p_rel, v_rel> + ||p_rel||*||v_rel||*cos(phi)'''
@@ -274,18 +273,20 @@ class KinematicBicycle2D_C3BF:
             p_rel_mag = ca.norm_2(p_rel)
             v_rel_mag = ca.norm_2(v_rel)
 
-            h = ca.if_else(
-                p_rel_mag <= ego_dim,
-                -1e6,
-                (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag  # False일 때 계산
-                )
+            # h = ca.if_else(
+            #     p_rel_mag <= ego_dim,
+            #     -1e6,
+            #     (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag  # False일 때 계산
+            #     )
+            h = (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag  # False일 때 계산
+                
             return h
 
         h_k1 = h(x_k1, obs, robot_radius, beta)
         h_k = h(x_k, obs, robot_radius, beta)
 
-        print(f"h_k1 value: {h_k1}")  # 실제 값이 나오는지 확인
-        print(f"h_k value: {h_k}")  # 실제 값이 나오는지 확인
+        print(f"h_k1 value: {h_k1}")
+        print(f"h_k value: {h_k}")
         
         d_h = h_k1 - h_k
         # cbf = h_dot + gamma1 * h_k
