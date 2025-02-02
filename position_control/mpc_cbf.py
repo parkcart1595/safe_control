@@ -226,22 +226,23 @@ class MPCCBF:
         _x = self.model.x['x']
         _u = self.model.u['u']  # Current control input [0] acc, [1] omega
         _obs = self.model.tvp['obs']
+        _goal = self.model.tvp['goal']
 
         # Add a separate constraint for each of the 5 obstacles
         for i in range(5):
             obs_i = _obs[i, :]  # Select the i-th obstacle
-            cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i)
+            cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i, _goal)
             mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint, ub=0)
 
         return mpc
 
-    def compute_cbf_constraint(self, _x, _u, _obs):
+    def compute_cbf_constraint(self, _x, _u, _obs, _goal):
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
 
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = self.model.tvp['alpha']
-            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
+            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs, _goal)
             cbf_constraint = d_h + _alpha * h_k
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
             _alpha1 = self.model.tvp['alpha1']
@@ -300,6 +301,8 @@ class MPCCBF:
         y_next = self.simulator.make_step(u)
         x_next = self.estimator.make_step(y_next)
 
+        # if nearest_obs is not None:
+        #     h_k, d_h = self.robot.agent_barrier_dt(x_next, u, nearest_obs, goal, self.robot.robot_radius)
         # if nearest_obs is not None:
         #     cbf_constraint = self.compute_cbf_constraint(
         #         x_next, u, nearest_obs)  # here use actual value, not symbolic

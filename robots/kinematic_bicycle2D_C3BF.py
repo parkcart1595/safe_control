@@ -52,7 +52,7 @@ class KinematicBicycle2D_C3BF:
         if 'v_max' not in self.robot_spec:
             self.robot_spec['v_max'] = 1.0
         if 'a_max' not in self.robot_spec:
-            self.robot_spec['a_max'] = 0.5
+            self.robot_spec['a_max'] = 0.1
         if 'delta_max' not in self.robot_spec:
             self.robot_spec['delta_max'] = np.deg2rad(30)
         if 'beta_max' not in self.robot_spec:
@@ -251,29 +251,28 @@ class KinematicBicycle2D_C3BF:
 
         return h, dh_dx
     
-    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
-        '''Discrete Time High Order C3BF'''
+    def agent_barrier_dt(self, x_k, u_k, obs, G, robot_radius, beta=1.01):
+        '''Discrete Time High Order DC3BF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
 
-        def h(x, obs, robot_radius, beta=1.01):
-            '''Computes C3BF h(x) = <p_rel, v_rel> + ||p_rel||*||v_rel||*cos(phi)'''
+        def h(x, obs, robot_radius, G, beta=1.01):
+            '''Computes DC3BF h(x) = ||p_rel|| - ||v_rel|| * T_esc * gamma'''
             theta = x[2, 0]
             v = x[3, 0]
 
             obs_vel_x = 0.0
             obs_vel_y = 0.0
 
-            # G = np.copy(G.reshape(-1, 1))  # goal state
-            # theta_d = np.arctan2(G[1, 0] - x[1, 0], G[0, 0] - x[0, 0])
-            #error_theta = angle_normalize(theta_d - x[2, 0])
+            G = ca.reshape(G, -1, 1)  # goal state
+            theta_d = ca.atan2(G[1, 0] - x[1, 0], G[0, 0] - x[0, 0])  
+            error_theta = theta_d - x[2, 0]
 
-            # # Calculate escape time
-            # T_turn = np.abs(error_theta) / self.robot_spec['beta_max']
-            # T_brake = v / self.robot_spec['a_max']
-            # T_esc =  T_turn + T_brake
-            T_esc = 2.0
-
+            # Calculate escape time
+            T_turn = ca.fabs(error_theta) / self.robot_spec['beta_max']
+            T_brake = v / self.robot_spec['a_max']
+            T_esc =  T_turn + T_brake
+            # T_esc = 2.0
             
             # Combine radius R
             ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision radius
@@ -285,9 +284,9 @@ class KinematicBicycle2D_C3BF:
             v_rel_mag = ca.norm_2(v_rel)
             
             # Compute the argument for arcos
-            dot_prod = ca.mtimes(p_rel.T, v_rel)[0, 0]
-            arg = ca.fmin(ca.fmax(dot_prod / (p_rel_mag * v_rel_mag), -1.0), 1.0)
-            psi = ca.acos(arg)
+            dot_prod = ca.mtimes(p_rel.T, -v_rel)[0, 0]
+            # arg = ca.fmin(ca.fmax(dot_prod / (p_rel_mag * v_rel_mag), 0.0), 1.0) #  -1.0 < cos(psi) < 0.0
+            psi = ca.acos(dot_prod / (p_rel_mag * v_rel_mag))
             phi = ca.asin(ego_dim / p_rel_mag)
             gamma = ca.fmax(0.0, 1.0 - (psi/phi))
 
@@ -295,12 +294,12 @@ class KinematicBicycle2D_C3BF:
             h= p_rel_mag - T_esc * v_rel_mag * gamma
             return h
 
-        h_k1 = h(x_k1, obs, robot_radius, beta)
-        h_k = h(x_k, obs, robot_radius, beta)
+        h_k1 = h(x_k1, obs, robot_radius, G, beta)
+        h_k = h(x_k, obs, robot_radius, G, beta)
         
         d_h = h_k1 - h_k
         # cbf = h_dot + gamma1 * h_k
-
+        print(f"d_h: {d_h}")
         return h_k, d_h
 
     # def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
