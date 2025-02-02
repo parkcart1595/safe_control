@@ -264,8 +264,8 @@ class BaseRobot:
             return self.robot.rotate_to(self.yaw, theta)
         return self.robot.rotate_to(self.X, theta)
 
-    def agent_barrier(self, obs):
-        return self.robot.agent_barrier(self.X, obs, self.robot_radius)
+    def agent_barrier(self, obs, G):
+        return self.robot.agent_barrier(self.X, obs, G, self.robot_radius)
 
     def agent_barrier_dt(self, x_k, u_k, obs, G):
         return self.robot.agent_barrier_dt(x_k, u_k, obs, G, self.robot_radius)

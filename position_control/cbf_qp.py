@@ -76,7 +76,7 @@ class CBFQP:
             self.A1.value = np.zeros_like(self.A1.value)
             self.b1.value = np.zeros_like(self.b1.value)
         elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
-            h, dh_dx = self.robot.agent_barrier(nearest_obs)
+            h, dh_dx = self.robot.agent_barrier(nearest_obs, control_ref['goal'])
             self.A1.value[0,:] = dh_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
@@ -95,7 +95,7 @@ class CBFQP:
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
         print(f"u3: {self.u.value}")
 
-        # print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
+        print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
 
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
