@@ -50,7 +50,7 @@ class KinematicBicycle2D_C3BF:
         if 'rear_ax_distance' not in self.robot_spec:
             self.robot_spec['rear_ax_dist'] = 0.3
         if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 0.1
+            self.robot_spec['v_max'] = 1.0
         if 'a_max' not in self.robot_spec:
             self.robot_spec['a_max'] = 0.5
         if 'delta_max' not in self.robot_spec:
@@ -241,44 +241,44 @@ class KinematicBicycle2D_C3BF:
         v_rel_mag = np.linalg.norm(v_rel)
 
         # # Compute cos_phi safely for c3bf
-        # eps = 1e-6
-        # cal_max = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
-        # sqrt_term = np.sqrt(cal_max)
-        # cos_phi = sqrt_term / (p_rel_mag + eps)
+        eps = 1e-6
+        cal_max = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
+        sqrt_term = np.sqrt(cal_max)
+        cos_phi = sqrt_term / (p_rel_mag + eps)
 
-        # Compute phi and psi for dc3bf
-        dot_prod = np.dot(p_rel.T, -v_rel)[0, 0]
-        psi = np.arccos(dot_prod / (p_rel_mag * v_rel_mag))
-        phi = np.arcsin(ego_dim / p_rel_mag)
-        gamma = np.maximum(0.0, 1.0 - psi/phi)
+        # # Compute phi and psi for dc3bf
+        # dot_prod = np.dot(p_rel.T, -v_rel)[0, 0]
+        # psi = np.arccos(dot_prod / (p_rel_mag * v_rel_mag))
+        # phi = np.arcsin(ego_dim / p_rel_mag)
+        # gamma = np.maximum(0.0, 1.0 - psi/phi)
         
-        # # Compute h (C3BF)
-        # h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * cos_phi
+        # Compute h (C3BF)
+        h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * cos_phi
 
-        # Compute h (DC3BF)
-        h= p_rel_mag - T_esc * v_rel_mag * gamma
+        # # Compute h (DC3BF)
+        # h= p_rel_mag - T_esc * v_rel_mag * gamma
         print(f"h: {h}")
 
         # Compute ∂h/∂x (dh_dx)
         dh_dx = np.zeros((1, 4))
 
         # For C3BF
-        # dh_dx[0, 0] = -v_rel_x - v_rel_mag * p_rel_x / (sqrt_term + eps) 
-        # dh_dx[0, 1] = -v_rel_y - v_rel_mag * p_rel_y / (sqrt_term + eps)
-        # dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)))
-        # dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta)))
+        dh_dx[0, 0] = -v_rel_x - v_rel_mag * p_rel_x / (sqrt_term + eps) 
+        dh_dx[0, 1] = -v_rel_y - v_rel_mag * p_rel_y / (sqrt_term + eps)
+        dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)))
+        dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta)))
 
-        # For DC3BF
-        z = np.dot(p_rel.T, -v_rel)[0, 0] / (p_rel_mag * v_rel_mag)
-        dg_dx = - 1 / np.sqrt(1 - z**2) * (v_rel_x * p_rel_mag * v_rel_mag + np.dot(p_rel.T, -v_rel)[0, 0] * p_rel_x / p_rel_mag) / p_rel_mag**2 / v_rel_mag
-        dg_dy = - 1 / np.sqrt(1 - z**2) * (v_rel_y * p_rel_mag * v_rel_mag + np.dot(p_rel.T, -v_rel)[0, 0] * p_rel_y / p_rel_mag) / p_rel_mag**2 / v_rel_mag
-        dg_dtheta = - 1 / np.sqrt(1 - z**2) * (-(p_rel_x * v * np.sin(theta) - p_rel_y * v * np.cos(theta)) * p_rel_mag * v_rel_mag - np.dot(p_rel.T, -v_rel)[0, 0] * (v_rel_x * v * np.sin(theta) - v_rel_y * v * np.cos(theta)) / v_rel_mag) / p_rel_mag / v_rel_mag**2
-        dg_dv = - 1 / np.sqrt(1 - z**2) * (-(-p_rel_x * np.cos(theta) - p_rel_y * np.sin(theta)) * p_rel_mag * v_rel_mag - np.dot(p_rel.T, -v_rel)[0, 0] * (-v_rel_x * np.cos(theta) - v_rel_y * np.sin(theta)) / v_rel_mag) / p_rel_mag / v_rel_mag**2
+        # # For DC3BF
+        # z = np.dot(p_rel.T, -v_rel)[0, 0] / (p_rel_mag * v_rel_mag)
+        # dg_dx = - 1 / np.sqrt(1 - z**2) * (v_rel_x * p_rel_mag * v_rel_mag + np.dot(p_rel.T, -v_rel)[0, 0] * p_rel_x / p_rel_mag) / p_rel_mag**2 / v_rel_mag
+        # dg_dy = - 1 / np.sqrt(1 - z**2) * (v_rel_y * p_rel_mag * v_rel_mag + np.dot(p_rel.T, -v_rel)[0, 0] * p_rel_y / p_rel_mag) / p_rel_mag**2 / v_rel_mag
+        # dg_dtheta = - 1 / np.sqrt(1 - z**2) * (-(p_rel_x * v * np.sin(theta) - p_rel_y * v * np.cos(theta)) * p_rel_mag * v_rel_mag - np.dot(p_rel.T, -v_rel)[0, 0] * (v_rel_x * v * np.sin(theta) - v_rel_y * v * np.cos(theta)) / v_rel_mag) / p_rel_mag / v_rel_mag**2
+        # dg_dv = - 1 / np.sqrt(1 - z**2) * (-(-p_rel_x * np.cos(theta) - p_rel_y * np.sin(theta)) * p_rel_mag * v_rel_mag - np.dot(p_rel.T, -v_rel)[0, 0] * (-v_rel_x * np.cos(theta) - v_rel_y * np.sin(theta)) / v_rel_mag) / p_rel_mag / v_rel_mag**2
 
-        dh_dx[0, 0] = -p_rel_x / p_rel_mag - v_rel_mag * T_esc * dg_dx
-        dh_dx[0, 1] = -p_rel_y / p_rel_mag - v_rel_mag * T_esc * dg_dy
-        dh_dx[0, 2] = -((2 * v * np.sin(theta) - 2 * v**2 * np.cos(theta) * np.sin(theta)) / v_rel_mag) * T_esc * gamma - v_rel_mag * (1 / self.robot_spec['beta_max']) * gamma - v_rel_mag * T_esc * dg_dtheta
-        dh_dx[0, 3] = ((-2 * np.cos(theta) + 2 * v * np.cos(theta) * np.cos(theta)) / v_rel_mag) * T_esc * gamma - v_rel_mag * (1 / self.robot_spec['a_max']) * gamma - v_rel_mag * T_esc * dg_dv
+        # dh_dx[0, 0] = -p_rel_x / p_rel_mag - v_rel_mag * T_esc * dg_dx
+        # dh_dx[0, 1] = -p_rel_y / p_rel_mag - v_rel_mag * T_esc * dg_dy
+        # dh_dx[0, 2] = -((2 * v * np.sin(theta) - 2 * v**2 * np.cos(theta) * np.sin(theta)) / v_rel_mag) * T_esc * gamma - v_rel_mag * (1 / self.robot_spec['beta_max']) * gamma - v_rel_mag * T_esc * dg_dtheta
+        # dh_dx[0, 3] = ((-2 * np.cos(theta) + 2 * v * np.cos(theta) * np.cos(theta)) / v_rel_mag) * T_esc * gamma - v_rel_mag * (1 / self.robot_spec['a_max']) * gamma - v_rel_mag * T_esc * dg_dv
 
         return h, dh_dx
     
