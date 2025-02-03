@@ -202,11 +202,14 @@ class MPCCBF:
                 dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5, 1))  # 5 far away obstacles
                 tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
-                num_obstacles = self.obs.shape[0]
+                obs_data = self.obs.copy()
+                if obs_data.shape[1] >= 5:
+                    obs_data = obs_data[:, 0:3]
+                num_obstacles = obs_data.shape[0]
                 if num_obstacles < 5:
                     # Add dummy obstacles for missing ones
                     dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
-                    tvp_template['_tvp', :, 'obs'] = np.vstack([self.obs, dummy_obstacles])
+                    tvp_template['_tvp', :, 'obs'] = np.vstack([obs_data, dummy_obstacles])
                 else:
                     # Use the detected obstacles directly
                     tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
@@ -274,7 +277,11 @@ class MPCCBF:
             # No obstacles detected, set 5 dummy obstacles far away
             self.obs = np.tile(np.array([1000, 1000, 0]), (5, 1))
         else:
-            num_obstacles = len(obs)
+            obs = np.array(obs)
+            if obs.shape[1] >= 5:
+                        obs = obs[:, 0:3]
+            num_obstacles = obs.shape[0]
+
             if num_obstacles < 5:
                 # Add dummy obstacles for missing ones
                 dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
