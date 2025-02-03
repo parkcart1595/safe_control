@@ -64,9 +64,10 @@ class Plotting:
             main_ax.add_patch(
                 patches.Circle(
                     (ox, oy), r,
-                    edgecolor='black',
-                    facecolor='gray',
-                    fill=True
+                    # edgecolor='black',
+                    # facecolor='gray',
+                    edgecolor='black', facecolor='none', linestyle='--'
+                    # fill=True
                 )
             )
 

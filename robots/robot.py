@@ -373,15 +373,21 @@ class BaseRobot:
             obs = np.array(obs).flatten()  # obs를 1D 배열로 변환
             obs_pos = np.array([obs[0], obs[1]])
             obs_radius = obs[2]
-            obs_vel_x = 0
-            obs_vel_y = 0
+            # if len(obs) >= 5:
+            #     obs_vel_x = obs[3]
+            #     obs_vel_y = obs[4]
+            # else:
+            #     obs_vel_x = 0
+            #     obs_vel_y = 0
+            obs_vel_x = obs[3]
+            obs_vel_y = obs[4]
 
             # Combine radius R
             ego_dim = obs_radius + self.robot_spec['body_width'] # max(c1,c2) + robot_width/2
 
             p_rel = obs_pos - robot_pos
             v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
-                            [obs_vel_y - v * np.sin(theta)]]) # since obstacle is static
+                            [obs_vel_y - v * np.sin(theta)]]) 
 
             p_rel_mag = np.linalg.norm(p_rel)
             v_rel_mag = np.linalg.norm(v_rel) # Can be used v_rel_plot later

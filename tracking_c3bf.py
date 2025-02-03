@@ -45,6 +45,10 @@ class LocalTrackingController:
         self.current_goal_index = 0  # Index of the current goal in the path
         self.reached_threshold = 0.2
 
+        # Initialize moving obstacles
+        self.obs = np.array([])
+        self.obs_patches = []
+
         if self.robot_spec['model'] == 'SingleIntegrator2D':
             if X0.shape[0] == 2:
                 X0 = np.array([X0[0], X0[1], 0.0]).reshape(-1, 1)
@@ -275,12 +279,47 @@ class LocalTrackingController:
         nearest_obstacle = all_obs[min_distance_index]
         return nearest_obstacle.reshape(-1, 1)
 
+    # Update dynamic obs position
+    def get_dynamic_obs(self):
+        """
+        if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step
+        """
+
+        if self.obs is not None and self.obs.size != 0 and self.obs.shape[1] >= 5:
+            x_min, x_max = 0, 15
+            y_min, y_max = 0, 15
+            for i in range(self.obs.shape[0]):
+                self.obs[i, 0] += self.obs[i, 3] * self.dt
+                self.obs[i, 1] += self.obs[i, 4] * self.dt
+                if self.obs[i, 0] < x_min or self.obs[i, 0] > x_max:
+                    self.obs[i, 3] = -self.obs[i, 3]
+                if self.obs[i, 1] < y_min or self.obs[i, 1] > y_max:
+                    self.obs[i, 4] = -self.obs[i, 4]
+    
+    def render_dynamic_obs(self):
+        for patch in self.obs_patches:
+            patch.remove()
+        self.obs_patches = []
+
+        if self.obs is not None and self.obs.size != 0 and hasattr(self, 'obs_initial'):
+            for idx, obs in enumerate(self.obs):
+                # obs: [x, y, t, vx, vy]
+                current_circle = patches.Circle((obs[0], obs[1]), obs[2],
+                                        edgecolor='black', facecolor='gray', linestyle='-', fill=True)
+                self.ax.add_patch(current_circle)
+                self.obs_patches.append(current_circle)
+
+                initial_obs = self.obs_initial[idx]
+                initial_circle = patches.Circle((initial_obs[0], initial_obs[1]), initial_obs[2], edgecolor='none', facecolor='none', linestyle='--')
+                self.ax.add_patch(initial_circle)
+                self.obs_patches.append(initial_circle)
+
     def is_collide_unknown(self):
         # if self.unknown_obs is None:
         #     return False
         # robot_width = self.robot_spec['body_width']
         # robot_radius = self.robot.robot_radius
-        robot_max_dim = 0 #self.robot.robot_radius # self.robot_spec['rear_ax_dist']
+        robot_max_dim = self.robot.robot_radius # self.robot_spec['rear_ax_dist']
 
         if self.unknown_obs is not None:
             for obs in self.unknown_obs:
@@ -364,7 +403,11 @@ class LocalTrackingController:
         # self.nearest_obs = self.get_nearest_obs(detected_obs)
         self.nearest_multi_obs = self.get_nearest_unpassed_obs(detected_obs, obs_num=self.num_constraints)
         if self.nearest_multi_obs is not None:
-            self.nearest_obs = self.nearest_multi_obs[0].reshape(3,1)
+            # check multi dyn obs
+            if self.obs.size != 0 and self.obs.shape[1] >= 5:
+                self.nearest_obs = self.nearest_multi_obs[0].reshape(-1, 1)
+            else:
+                self.nearest_obs = self.nearest_multi_obs[0].reshape(3, 1)
         else:
             self.nearest_obs = None
 
@@ -482,7 +525,11 @@ class LocalTrackingController:
         unexpected_beh = 0
 
         for _ in range(int(tf / self.dt)):
+            # update dynamic obs pos
+            self.get_dynamic_obs()
             ret = self.control_step()
+            if self.show_animation:
+                self.render_dynamic_obs()
             self.draw_plot()
             unexpected_beh += ret
             if ret == -1:  # all waypoints reached
@@ -519,6 +566,20 @@ def single_agent_main(control_type):
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                             [10.0, 7.3, 0.4],
                             [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+    
+    # Allocate velocity(vx, vy) per obs
+    dynamic_obs = []
+    for i, obs in enumerate(known_obs):
+        if i % 2 == 0:
+            vx = 0.1
+            vy = 0.05
+        else:
+            vx = -0.1
+            vy = -0.05
+        dynamic_obs.append([obs[0], obs[1], obs[2], vx, vy])
+    dynamic_obs = np.array(dynamic_obs)
+    dynamic_obs_initial = dynamic_obs.copy()
+    
     plot_handler = plotting.Plotting(known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
     env_handler = env.Env()
@@ -576,7 +637,9 @@ def single_agent_main(control_type):
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
-    tracking_controller.obs = known_obs
+    tracking_controller.obs = dynamic_obs
+    tracking_controller.obs_initial = dynamic_obs_initial
+    # tracking_controller.obs = known_obs
     # tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)

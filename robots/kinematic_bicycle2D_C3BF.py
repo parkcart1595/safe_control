@@ -50,7 +50,7 @@ class KinematicBicycle2D_C3BF:
         if 'rear_ax_distance' not in self.robot_spec:
             self.robot_spec['rear_ax_dist'] = 0.3
         if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 1.0
+            self.robot_spec['v_max'] = 1.2
         if 'a_max' not in self.robot_spec:
             self.robot_spec['a_max'] = 0.5
         if 'delta_max' not in self.robot_spec:
@@ -212,8 +212,9 @@ class KinematicBicycle2D_C3BF:
         theta = X[2, 0]
         v = X[3, 0]
         
-        obs_vel_x = 0
-        obs_vel_y = 0
+        obs_vel_x = obs[3][0]
+        obs_vel_y = obs[4][0]
+
 
         # Calculate escape time
         G = np.copy(G.reshape(-1, 1))  # goal state
@@ -231,7 +232,7 @@ class KinematicBicycle2D_C3BF:
                         [obs[1][0] - X[1, 0]]])
         v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
                         [obs_vel_y - v * np.sin(theta)]])  # Since the obstacle is static
-
+        print(f"obs_x: {obs[0][0]} | obs_y: {obs[1][0]} | obs_r: {obs[2][0]} | obs_vel_x: {obs[3][0]} | obs_vel_y: {obs[4][0]}")
         p_rel_x = p_rel[0, 0]
         p_rel_y = p_rel[1, 0]
         v_rel_x = v_rel[0, 0]
