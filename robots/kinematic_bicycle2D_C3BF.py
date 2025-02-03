@@ -242,6 +242,12 @@ class KinematicBicycle2D_C3BF:
         # print(f"p_rel: {p_rel} | p_rel_mag: {p_rel_mag}")
         # print(f"ego_dim: {ego_dim} | p_rel_mag: {p_rel_mag}")
 
+        # Compute cos_phi safely
+        eps = 1e-6
+        cal_max = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
+        sqrt_term = np.sqrt(cal_max)
+        cos_phi = sqrt_term / (p_rel_mag + eps)
+
         # Compute phi and psi
         dot_prod = np.dot(p_rel.T, -v_rel)[0, 0]
         psi = np.arccos(dot_prod / (p_rel_mag * v_rel_mag))
@@ -254,6 +260,15 @@ class KinematicBicycle2D_C3BF:
         # Compute ∂h/∂x (dh_dx)
         dh_dx = np.zeros((1, 4))
 
+        dh_dx[0, 0] = -v_rel_x - v_rel_mag * p_rel_x / (sqrt_term + eps) 
+        dh_dx[0, 1] = -v_rel_y - v_rel_mag * p_rel_y / (sqrt_term + eps)
+        dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)))
+        dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta)))
+
+        # dh_dx[0, 0] = -v_rel_x - v_rel_mag * p_rel_x / sqrt_term
+        # dh_dx[0, 1] = -v_rel_y - v_rel_mag * p_rel_y / sqrt_term
+        # dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + sqrt_term / v_rel_mag * (v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)))
+        # dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + sqrt_term / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta)))
         # dh_dx[0, 0] = -obs_vel_x - v_rel_mag * p_rel_x / np.sqrt(p_rel_mag**2 - ego_dim**2)
         # dh_dx[0, 1] = -obs_vel_y - v_rel_mag * p_rel_y / np.sqrt(p_rel_mag**2 - ego_dim**2)
         # dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag * v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta))
