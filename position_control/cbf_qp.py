@@ -76,30 +76,23 @@ class CBFQP:
             self.A1.value = np.zeros_like(self.A1.value)
             self.b1.value = np.zeros_like(self.b1.value)
         elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
-            h, dh_dx = self.robot.agent_barrier(nearest_obs, control_ref['goal'])
+            h, dh_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
             h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
             self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
             self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
-        print(f"h: {h} | dhdx: {dh_dx} | g: {self.robot.g()} | f: {self.robot.f()}")
-        print(f"u: {self.u.value}")
-        print(f"lgh: {dh_dx @ self.robot.g()}")
-        print(f"lfh + k(h): {dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h}")
 
         self.u_ref.value = control_ref['u_ref']
-        print(f"u2: {self.u.value}")
 
         # 4. Solve this yields a new 'self.u'
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
-        print(f"u3: {self.u.value}")
 
-        print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
+        # print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
 
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
-        print(f"u4: {self.u.value}")
         # if self.cbf_controller.status != 'optimal':
         #     raise QPError("CBF-QP optimization failed")
         return self.u.value

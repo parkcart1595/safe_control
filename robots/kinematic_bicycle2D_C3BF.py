@@ -50,7 +50,7 @@ class KinematicBicycle2D_C3BF:
         if 'rear_ax_distance' not in self.robot_spec:
             self.robot_spec['rear_ax_dist'] = 0.3
         if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 0.1
+            self.robot_spec['v_max'] = 1.0
         if 'a_max' not in self.robot_spec:
             self.robot_spec['a_max'] = 0.5
         if 'delta_max' not in self.robot_spec:
@@ -135,19 +135,15 @@ class KinematicBicycle2D_C3BF:
 
         # Steering angle and slip angle
         delta = np.clip(k_theta * error_theta, -delta_max, delta_max)  # Steering angle
-        # print(f'k_theta: {k_theta} | error_theta: {error_theta} | v: {delta_max}')
         beta = self.beta(delta) # Slip angle conversion
                 
         if abs(error_theta) > np.deg2rad(90):
             v = 0.0
         else:
             v = min(k_v * distance * np.cos(error_theta), v_max)
-        # print(f'G: {G} | vmax: {v_max} | delta_max: {delta_max} | distance: {distance} | theta_d: {theta_d} | error_theta: {error_theta}')
-        # print(f'delta: {delta} | beta: {beta} | v: {v}')
 
         a = k_a * (v - X[3, 0])
 
-        # print(f"a: {a}, beta: {beta}")
         return np.array([a, beta]).reshape(-1, 1)
     
     def stop(self, X):
@@ -190,7 +186,7 @@ class KinematicBicycle2D_C3BF:
     
         return transform_body, transform_rear, transform_front
     
-    def agent_barrier(self, X, obs, G, robot_radius, beta=1.0):
+    def agent_barrier(self, X, obs, robot_radius, beta=1.0):
         """
         Compute a Collision Cone Control Barrier Function for the Kinematic Bicycle (continous time).
         
@@ -199,7 +195,7 @@ class KinematicBicycle2D_C3BF:
             h           : scalar, the C3BF value
             dh_dx       : (1, 4) array, gradient of h
 
-        The barrier is of "relative degree of 1" if done in velocity space, but for a kinematic bicycle, we can follow a pattern similar to agent_barrier:
+        The barrier is of "relative degree of 1"
             h_dot = ∂h/∂x ⋅ f(x) + ∂h_dot/∂x ⋅ g(x) ⋅ u
 
         Define h from the collision cone idea:
@@ -214,14 +210,6 @@ class KinematicBicycle2D_C3BF:
         
         obs_vel_x = 0
         obs_vel_y = 0
-
-        # Calculate escape time
-        G = np.copy(G.reshape(-1, 1))  # goal state
-        theta_d = np.arctan2(G[1, 0] - X[1, 0], G[0, 0] - X[0, 0])
-        error_theta = angle_normalize(theta_d - X[2, 0])
-        T_turn = np.abs(error_theta) / self.robot_spec['beta_max']
-        T_brake = v / self.robot_spec['a_max']
-        T_esc =  T_turn + T_brake
 
         # Combine radius R
         ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision radius
@@ -240,70 +228,38 @@ class KinematicBicycle2D_C3BF:
         p_rel_mag = np.linalg.norm(p_rel)
         v_rel_mag = np.linalg.norm(v_rel)
 
-        # # Compute cos_phi safely for c3bf
-        # eps = 1e-6
-        # cal_max = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
-        # sqrt_term = np.sqrt(cal_max)
-        # cos_phi = sqrt_term / (p_rel_mag + eps)
-
-        # Compute phi and psi for dc3bf
-        dot_prod = np.dot(p_rel.T, -v_rel)[0, 0]
-        psi = np.arccos(dot_prod / (p_rel_mag * v_rel_mag))
-        phi = np.arcsin(ego_dim / p_rel_mag)
-        gamma = np.maximum(0.0, 1.0 - psi/phi)
+        # Compute cos_phi safely for c3bf
+        eps = 1e-6
+        cal_max = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
+        sqrt_term = np.sqrt(cal_max)
+        cos_phi = sqrt_term / (p_rel_mag + eps)
         
-        # # Compute h (C3BF)
-        # h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * cos_phi
-
-        # Compute h (DC3BF)
-        h= p_rel_mag - T_esc * v_rel_mag * gamma
-        print(f"h: {h}")
+        # Compute h (C3BF)
+        h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * cos_phi
 
         # Compute ∂h/∂x (dh_dx)
         dh_dx = np.zeros((1, 4))
 
         # For C3BF
-        # dh_dx[0, 0] = -v_rel_x - v_rel_mag * p_rel_x / (sqrt_term + eps) 
-        # dh_dx[0, 1] = -v_rel_y - v_rel_mag * p_rel_y / (sqrt_term + eps)
-        # dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)))
-        # dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta)))
-
-        # For DC3BF
-        z = np.dot(p_rel.T, -v_rel)[0, 0] / (p_rel_mag * v_rel_mag)
-        dg_dx = - 1 / np.sqrt(1 - z**2) * (v_rel_x * p_rel_mag * v_rel_mag + np.dot(p_rel.T, -v_rel)[0, 0] * p_rel_x / p_rel_mag) / p_rel_mag**2 / v_rel_mag
-        dg_dy = - 1 / np.sqrt(1 - z**2) * (v_rel_y * p_rel_mag * v_rel_mag + np.dot(p_rel.T, -v_rel)[0, 0] * p_rel_y / p_rel_mag) / p_rel_mag**2 / v_rel_mag
-        dg_dtheta = - 1 / np.sqrt(1 - z**2) * (-(p_rel_x * v * np.sin(theta) - p_rel_y * v * np.cos(theta)) * p_rel_mag * v_rel_mag - np.dot(p_rel.T, -v_rel)[0, 0] * (v_rel_x * v * np.sin(theta) - v_rel_y * v * np.cos(theta)) / v_rel_mag) / p_rel_mag / v_rel_mag**2
-        dg_dv = - 1 / np.sqrt(1 - z**2) * (-(-p_rel_x * np.cos(theta) - p_rel_y * np.sin(theta)) * p_rel_mag * v_rel_mag - np.dot(p_rel.T, -v_rel)[0, 0] * (-v_rel_x * np.cos(theta) - v_rel_y * np.sin(theta)) / v_rel_mag) / p_rel_mag / v_rel_mag**2
-
-        dh_dx[0, 0] = -p_rel_x / p_rel_mag - v_rel_mag * T_esc * dg_dx
-        dh_dx[0, 1] = -p_rel_y / p_rel_mag - v_rel_mag * T_esc * dg_dy
-        dh_dx[0, 2] = -((2 * v * np.sin(theta) - 2 * v**2 * np.cos(theta) * np.sin(theta)) / v_rel_mag) * T_esc * gamma - v_rel_mag * (1 / self.robot_spec['beta_max']) * gamma - v_rel_mag * T_esc * dg_dtheta
-        dh_dx[0, 3] = ((-2 * np.cos(theta) + 2 * v * np.cos(theta) * np.cos(theta)) / v_rel_mag) * T_esc * gamma - v_rel_mag * (1 / self.robot_spec['a_max']) * gamma - v_rel_mag * T_esc * dg_dv
+        dh_dx[0, 0] = -v_rel_x - v_rel_mag * p_rel_x / (sqrt_term + eps) 
+        dh_dx[0, 1] = -v_rel_y - v_rel_mag * p_rel_y / (sqrt_term + eps)
+        dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)))
+        dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta)))
 
         return h, dh_dx
-    
-    def agent_barrier_dt(self, x_k, u_k, obs, G, robot_radius, beta=1.01):
-        '''Discrete Time High Order DC3BF'''
+
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
+        '''Discrete Time High Order C3BF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
 
-        def h(x, obs, robot_radius, G, beta=1.01):
-            '''Computes DC3BF h(x) = ||p_rel|| - ||v_rel|| * T_esc * gamma'''
+        def h(x, obs, robot_radius, beta=1.01):
+            '''Computes C3BF h(x) = <p_rel, v_rel> + ||p_rel||*||v_rel||*cos(phi)'''
             theta = x[2, 0]
             v = x[3, 0]
 
-            obs_vel_x = 0.0
-            obs_vel_y = 0.0
-
-            G = ca.reshape(G, -1, 1)  # goal state
-            theta_d = ca.atan2(G[1, 0] - x[1, 0], G[0, 0] - x[0, 0])  
-            error_theta = theta_d - x[2, 0]
-
-            # Calculate escape time
-            T_turn = ca.fabs(error_theta) / self.robot_spec['beta_max']
-            T_brake = v / self.robot_spec['a_max']
-            T_esc =  T_turn + T_brake
-            # T_esc = 2.0
+            obs_vel_x = 0
+            obs_vel_y = 0
             
             # Combine radius R
             ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision radius
@@ -313,56 +269,15 @@ class KinematicBicycle2D_C3BF:
 
             p_rel_mag = ca.norm_2(p_rel)
             v_rel_mag = ca.norm_2(v_rel)
-            
-            # Compute the argument for arcos
-            dot_prod = ca.mtimes(p_rel.T, -v_rel)[0, 0]
-            # arg = ca.fmin(ca.fmax(dot_prod / (p_rel_mag * v_rel_mag), 0.0), 1.0) #  -1.0 < cos(psi) < 0.0
-            psi = ca.acos(dot_prod / (p_rel_mag * v_rel_mag))
-            phi = ca.asin(ego_dim / p_rel_mag)
-            gamma = ca.fmax(0.0, 1.0 - (psi/phi))
 
-            # h = (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag  # False일 때 계산
-            h= p_rel_mag - T_esc * v_rel_mag * gamma
+            h = (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag  # False일 때 계산
+                
             return h
 
-        h_k1 = h(x_k1, obs, robot_radius, G, beta)
-        h_k = h(x_k, obs, robot_radius, G, beta)
+        h_k1 = h(x_k1, obs, robot_radius, beta)
+        h_k = h(x_k, obs, robot_radius, beta)
         
         d_h = h_k1 - h_k
         # cbf = h_dot + gamma1 * h_k
-        print(f"d_h: {d_h}")
+
         return h_k, d_h
-
-    # def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
-    #     '''Discrete Time High Order C3BF'''
-    #     # Dynamics equations for the next states
-    #     x_k1 = self.step(x_k, u_k, casadi=True)
-
-    #     def h(x, obs, robot_radius, beta=1.01):
-    #         '''Computes C3BF h(x) = <p_rel, v_rel> + ||p_rel||*||v_rel||*cos(phi)'''
-    #         theta = x[2, 0]
-    #         v = x[3, 0]
-
-    #         obs_vel_x = 0
-    #         obs_vel_y = 0
-            
-    #         # Combine radius R
-    #         ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision radius
-    #         # Compute relative position and velocity
-    #         p_rel = ca.vertcat(obs[0][0] - x[0, 0], obs[1][0] - x[1, 0])  # Use CasADi
-    #         v_rel = ca.vertcat(obs_vel_x - v * ca.cos(theta), obs_vel_y - v * ca.sin(theta))
-
-    #         p_rel_mag = ca.norm_2(p_rel)
-    #         v_rel_mag = ca.norm_2(v_rel)
-
-    #         h = (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag  # False일 때 계산
-                
-    #         return h
-
-    #     h_k1 = h(x_k1, obs, robot_radius, beta)
-    #     h_k = h(x_k, obs, robot_radius, beta)
-        
-    #     d_h = h_k1 - h_k
-    #     # cbf = h_dot + gamma1 * h_k
-
-    #     return h_k, d_h
