@@ -366,11 +366,10 @@ class BaseRobot:
         if control_type == "cbf_qp":
             obs_list = [obs_list[0]]
 
-        # 컬러맵 설정 (mpc_cbf일 때 장애물별 색상 다르게 지정)
         colors = cm.viridis(np.linspace(0, 1, len(obs_list)))
         
         for i, obs in enumerate(obs_list):
-            obs = np.array(obs).flatten()  # obs를 1D 배열로 변환
+            obs = np.array(obs).flatten()
             obs_pos = np.array([obs[0], obs[1]])
             obs_radius = obs[2]
             obs_vel_x = 0
@@ -402,15 +401,20 @@ class BaseRobot:
             cone_left = (robot_pos + 2 * cone_left).tolist()
             cone_right = (robot_pos + 2 * cone_right).tolist()
 
-            # print(f"Robot pos: {robot_pos}, Cone Left: {cone_left}, Cone Right: {cone_right}")
-
             # Draw the cone
             cone_points = np.array ([robot_pos.tolist(), cone_left, cone_right])
-            collision_cone_patch = patches.Polygon(
+            collision_cone_patch = patches.Polygon( # only edgecolors different
                 cone_points, closed = True,
                 edgecolor=colors[i] if control_type == 'mpc_cbf' else 'black',
                 linestyle='--', alpha=0.5, label=f"Obstacle {i}" if control_type == 'mpc_cbf' else None
             )
+            # collision_cone_patch = patches.Polygon( # both edge and face is different each others
+            #     cone_points, closed = True,
+            #     edgecolor=colors[i],
+            #     facecolor=colors[i],
+            #     linestyle='--', alpha=0.7,
+            #     label=f"Obstacle {i}" if control_type == 'mpc_cbf' else None
+            # )
             ax.add_patch(collision_cone_patch)
             self.collision_cone_patches.append(collision_cone_patch)
 
