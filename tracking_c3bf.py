@@ -633,7 +633,7 @@ def single_agent_main(control_type):
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=True,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
