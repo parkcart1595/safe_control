@@ -725,15 +725,8 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    start_time = time.time()
-
     single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')
-
-    end_time = time.time()  # End the timer
-    elapsed_time = end_time - start_time  # Calculate elapsed time
-
-    print(f"\nExecution Time: {elapsed_time:.4f} seconds")

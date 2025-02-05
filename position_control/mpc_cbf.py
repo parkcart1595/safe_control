@@ -58,7 +58,7 @@ class MPCCBF:
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            self.cbf_param['alpha'] = 0.05
+            self.cbf_param['alpha'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 0.15
@@ -92,7 +92,7 @@ class MPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(5, 3))
+            var_type='_tvp', var_name='obs', shape=(5, 5)) # Edit (5, 3) -> (5, 5) for dyn obs
 
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = model.set_variable(
@@ -199,16 +199,16 @@ class MPCCBF:
             # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
                 # Before detecting any obstacle, set 5 dummy obstacles far away
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5, 1))  # 5 far away obstacles
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))  # 5 far away obstacles
                 tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
                 obs_data = self.obs.copy()
                 if obs_data.shape[1] >= 5:
-                    obs_data = obs_data[:, 0:3]
+                    obs_data = obs_data[:, 0:5]
                 num_obstacles = obs_data.shape[0]
                 if num_obstacles < 5:
                     # Add dummy obstacles for missing ones
-                    dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
+                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
                     tvp_template['_tvp', :, 'obs'] = np.vstack([obs_data, dummy_obstacles])
                 else:
                     # Use the detected obstacles directly
@@ -229,23 +229,22 @@ class MPCCBF:
         _x = self.model.x['x']
         _u = self.model.u['u']  # Current control input [0] acc, [1] omega
         _obs = self.model.tvp['obs']
-        _goal = self.model.tvp['goal']
 
         # Add a separate constraint for each of the 5 obstacles
         for i in range(5):
             obs_i = _obs[i, :]  # Select the i-th obstacle
-            cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i, _goal)
+            cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i)
             mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint, ub=0)
 
         return mpc
 
-    def compute_cbf_constraint(self, _x, _u, _obs, _goal):
+    def compute_cbf_constraint(self, _x, _u, _obs):
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
 
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = self.model.tvp['alpha']
-            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs, _goal)
+            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
             cbf_constraint = d_h + _alpha * h_k
         elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
             _alpha1 = self.model.tvp['alpha1']
@@ -275,16 +274,16 @@ class MPCCBF:
         
         if obs is None or len(obs) == 0:
             # No obstacles detected, set 5 dummy obstacles far away
-            self.obs = np.tile(np.array([1000, 1000, 0]), (5, 1))
+            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))
         else:
             obs = np.array(obs)
             if obs.shape[1] >= 5:
-                        obs = obs[:, 0:3]
+                        obs = obs[:, 0:5]
             num_obstacles = obs.shape[0]
 
             if num_obstacles < 5:
                 # Add dummy obstacles for missing ones
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
                 self.obs = np.vstack([obs, dummy_obstacles])
             else:
                 # Use the detected obstacles directly (up to 5)
