@@ -50,7 +50,7 @@ class KinematicBicycle2D_C3BF:
         if 'rear_ax_distance' not in self.robot_spec:
             self.robot_spec['rear_ax_dist'] = 0.3
         if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 1.0
+            self.robot_spec['v_max'] = 1.5
         if 'a_max' not in self.robot_spec:
             self.robot_spec['a_max'] = 0.5
         if 'delta_max' not in self.robot_spec:
@@ -273,10 +273,10 @@ class KinematicBicycle2D_C3BF:
         dh_dx = np.zeros((1, 4))
 
         # For DC3BF
-        dh1_dx = (1/phi) * ((1 / np.sqrt(1 - q_x**2)) * (v_rel_x / (p_rel_mag * v_rel_mag) + p_rel_x * np.cos(psi) / p_rel_mag**2) + (psi/phi) * ((1 / np.sqrt(1 - p_x**2)) * (p_rel_x * ego_dim) / p_rel_mag**3))
-        dh1_dy = (1/phi) * ((1 / np.sqrt(1 - q_x**2)) * (v_rel_y / (p_rel_mag * v_rel_mag) + p_rel_y * np.cos(psi) / p_rel_mag**2) + (psi/phi) * ((1 / np.sqrt(1 - p_x**2)) * (p_rel_y * ego_dim) / p_rel_mag**3))
-        dh1_dtheta = (-1/phi) * (1 / np.sqrt(1 - q_x**2)) * ((-p_rel_x * v * np.sin(theta) + p_rel_y * v * np.cos(theta)) / (p_rel_mag * v_rel_mag) - (obs_vel_x * v * np.sin(theta) - obs_vel_y * v * np.cos(theta)) * np.cos(psi) / v_rel_mag**2)
-        dh1_dv = (-1/phi) * (1 / np.sqrt(1 - q_x**2)) * ((-p_rel_x * np.cos(theta) - p_rel_y * np.sin(theta)) / (p_rel_mag * v_rel_mag) - (-obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta) + v) * np.cos(psi) / v_rel_mag**2)
+        dh1_dx = (1/phi) * (-(1 / np.sqrt(1 - q_x**2)) * (v_rel_x / (p_rel_mag * v_rel_mag) + p_rel_x * np.cos(psi) / p_rel_mag**2) + (psi/phi) * (-(1 / np.sqrt(1 - p_x**2)) * (p_rel_x * ego_dim) / p_rel_mag**3))
+        dh1_dy = (1/phi) * (-(1 / np.sqrt(1 - q_x**2)) * (v_rel_y / (p_rel_mag * v_rel_mag) + p_rel_y * np.cos(psi) / p_rel_mag**2) + (psi/phi) * (-(1 / np.sqrt(1 - p_x**2)) * (p_rel_y * ego_dim) / p_rel_mag**3))
+        dh1_dtheta = (1/phi) * (-1 / np.sqrt(1 - q_x**2)) * (-(p_rel_x * v * np.sin(theta) - p_rel_y * v * np.cos(theta)) / (p_rel_mag * v_rel_mag) - (obs_vel_x * v * np.sin(theta) - obs_vel_y * v * np.cos(theta)) * np.cos(psi) / v_rel_mag**2)
+        dh1_dv = (1/phi) * (-1 / np.sqrt(1 - q_x**2)) * ((-p_rel_x * np.cos(theta) - p_rel_y * np.sin(theta)) / (p_rel_mag * v_rel_mag) - (-obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta) + v) * np.cos(psi) / v_rel_mag**2)
 
         dr_dx = alpha * ((1 / v_rel_mag * T_esc) * (-p_rel_x / p_rel_mag))
         dr_dy = alpha * ((1 / v_rel_mag * T_esc) * (-p_rel_y / p_rel_mag))
@@ -356,9 +356,9 @@ class KinematicBicycle2D_C3BF:
             psi = ca.acos(dot_prod / (p_rel_mag * v_rel_mag))
             phi = ca.asin(ego_dim / p_rel_mag)
             alpha = 0.35
-            gamma = alpha * (p_rel_mag / (v_rel_mag * T_esc) -1)
+            gamma = alpha * (p_rel_mag / (v_rel_mag * T_esc) - 1)
 
-            h= (psi/phi -1) + ca.tanh(gamma)
+            h = (psi / phi - 1) + ca.tanh(gamma)
                 
             return h
 
