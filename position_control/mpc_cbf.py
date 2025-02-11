@@ -1,14 +1,13 @@
 import numpy as np
 import casadi as ca
 import do_mpc
-import matplotlib.pyplot as plt
+
 
 class MPCCBF:
-    def __init__(self, robot, robot_spec, show_mpc_traj=False):
+    def __init__(self, robot, robot_spec):
         self.robot = robot
         self.robot_spec = robot_spec
         self.status = 'optimal'  # TODO: not implemented
-        self.show_mpc_traj = show_mpc_traj
 
         # MPC parameters
         self.horizon = 10
@@ -30,15 +29,13 @@ class MPCCBF:
         elif self.robot_spec['model'] == 'KinematicBicycle2D':
             self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
             self.R = np.array([0.5, 50.0])  # Input cost matrix
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
+            self.R = np.array([0.5, 50.0])  # Input cost matrix
         elif self.robot_spec['model'] == 'Quad2D':
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
-        elif self.robot_spec['model'] == 'VTOL2D':
-            self.horizon = 30
-            self.Q = np.diag([10, 10, 250, 10, 10, 50])
-            self.R = np.array([0.5, 0.5, 0.5, 500000])
 
-        self.n_controls = 2
 
         # DT CBF parameters should scale from 0 to 1
         self.cbf_param = {}
@@ -60,15 +57,14 @@ class MPCCBF:
             self.cbf_param['alpha1'] = 0.15
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            self.cbf_param['alpha'] = 0.10
+            self.n_states = 4
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 0.15
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 6
-        elif self.robot_spec['model'] == 'VTOL2D':
-            self.cbf_param['alpha1'] = 0.15
-            self.cbf_param['alpha2'] = 0.15
-            self.n_states = 6
-            self.n_controls = 4 # override n_controls for VTOL2D
+        self.n_controls = 2
 
         self.goal = np.array([0, 0])
         self.obs = None
@@ -96,12 +92,12 @@ class MPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(5, 3))
+            var_type='_tvp', var_name='obs', shape=(5, 5))
 
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = model.set_variable(
                 var_type='_tvp', var_name='alpha', shape=(1, 1))
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
             _alpha1 = model.set_variable(
                 var_type='_tvp', var_name='alpha1', shape=(1, 1))
             _alpha2 = model.set_variable(
@@ -119,17 +115,6 @@ class MPCCBF:
         # Defines the objective function wrt the state cost
         cost = ca.mtimes([(_x - _goal).T, self.Q, (_x - _goal)])
         model.set_expression(expr_name='cost', expr=cost)
-
-        if self.show_mpc_traj:
-            if self.robot_spec['model'] == 'VTOL2D':
-                model.set_expression('u_0', _u[0])
-                model.set_expression('u_1', _u[1])
-                model.set_expression('u_2', _u[2])
-                model.set_expression('u_3', _u[3]*180/3.14159)
-                model.set_expression('v', ca.hypot(_x[3], _x[4]))
-            else:
-                for i in range(self.n_controls):
-                    model.set_expression('u_' + str(i), _u[i])
 
         model.setup()
         return model
@@ -184,44 +169,23 @@ class MPCCBF:
                 [-self.robot_spec['a_max'], -self.robot_spec['beta_max']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['a_max'], self.robot_spec['beta_max']])
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
+            mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
+            mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
+            mpc.bounds['lower', '_u', 'u'] = np.array(
+                [-self.robot_spec['a_max'], -self.robot_spec['beta_max']])
+            mpc.bounds['upper', '_u', 'u'] = np.array(
+                [self.robot_spec['a_max'], self.robot_spec['beta_max']])
         elif self.robot_spec['model'] == 'Quad2D':
             mpc.bounds['lower', '_u', 'u'] = np.array(
                 [self.robot_spec['f_min'], self.robot_spec['f_min']])
             mpc.bounds['upper', '_u', 'u'] = np.array(
                 [self.robot_spec['f_max'], self.robot_spec['f_max']])
-        elif self.robot_spec['model'] == 'VTOL2D':
-            mpc.bounds['lower', '_u', 'u'] = np.array(
-                [self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['throttle_min'], self.robot_spec['elevator_min']])
-            mpc.bounds['upper', '_u', 'u'] = np.array(
-                [self.robot_spec['throttle_max'], self.robot_spec['throttle_max'], self.robot_spec['throttle_max'], self.robot_spec['elevator_max']])
-            mpc.bounds['lower', '_x', 'x', 3] = -self.robot_spec['v_max']
-            mpc.bounds['upper', '_x', 'x', 3] = self.robot_spec['v_max']
-            mpc.bounds['lower', '_x', 'x', 4] = -self.robot_spec['descent_speed_max']
-            mpc.bounds['upper', '_x', 'x', 1] = 14.0
 
         mpc = self.set_tvp(mpc)
         mpc = self.set_cbf_constraint(mpc)
 
         mpc.setup()
-        if self.show_mpc_traj:
-            plt.ion()
-            self.graphics = do_mpc.graphics.Graphics(mpc.data)
-                        
-            if self.robot_spec['model'] == 'VTOL2D':
-                self.fig, ax = plt.subplots(self.n_controls + 1, sharex=True)
-                ax[0].set_ylabel('d_front')
-                ax[1].set_ylabel('d_rear')
-                ax[2].set_ylabel('d_pusher')
-                ax[3].set_ylabel('elevator [\u00B0]')
-
-                ax[4].set_ylabel('v [m/s]')
-                self.graphics.add_line(var_type='_aux', var_name='v', axis=ax[self.n_controls])
-            else: 
-                raise NotImplementedError('Model not implemented')
-            
-            for i in range(self.n_controls):
-                self.graphics.add_line(var_type='_aux', var_name='u_' + str(i), axis=ax[i])
-            self.fig.align_ylabels()
         return mpc
 
     def set_tvp(self, mpc):
@@ -235,21 +199,24 @@ class MPCCBF:
             # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
                 # Before detecting any obstacle, set 5 dummy obstacles far away
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5, 1))  # 5 far away obstacles
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))  # 5 far away obstacles
                 tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
-                num_obstacles = self.obs.shape[0]
+                obs_data = self.obs.copy()
+                if obs_data.shape[1] >= 5:
+                    obs_data = obs_data[:, 0:5]
+                num_obstacles = obs_data.shape[0]
                 if num_obstacles < 5:
                     # Add dummy obstacles for missing ones
-                    dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
-                    tvp_template['_tvp', :, 'obs'] = np.vstack([self.obs, dummy_obstacles])
+                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
+                    tvp_template['_tvp', :, 'obs'] = np.vstack([obs_data, dummy_obstacles])
                 else:
                     # Use the detected obstacles directly
                     tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
 
-            if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
+            if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
-            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
                 tvp_template['_tvp', :, 'alpha1'] = self.cbf_param['alpha1']
                 tvp_template['_tvp', :, 'alpha2'] = self.cbf_param['alpha2']
 
@@ -262,24 +229,25 @@ class MPCCBF:
         _x = self.model.x['x']
         _u = self.model.u['u']  # Current control input [0] acc, [1] omega
         _obs = self.model.tvp['obs']
+        _goal = self.model.tvp['goal']
 
         # Add a separate constraint for each of the 5 obstacles
         for i in range(5):
             obs_i = _obs[i, :]  # Select the i-th obstacle
-            cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i)
+            cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i, _goal)
             mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint, ub=0)
 
         return mpc
 
-    def compute_cbf_constraint(self, _x, _u, _obs):
+    def compute_cbf_constraint(self, _x, _u, _obs, _goal):
         '''compute cbf constraint value
         We reuse this function to print the CBF constraint'''
 
-        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D']:
+        if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = self.model.tvp['alpha']
-            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs)
+            h_k, d_h = self.robot.agent_barrier_dt(_x, _u, _obs, _goal)
             cbf_constraint = d_h + _alpha * h_k
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
             _alpha1 = self.model.tvp['alpha1']
             _alpha2 = self.model.tvp['alpha2']
             h_k, d_h, dd_h = self.robot.agent_barrier_dt(_x, _u, _obs)
@@ -287,7 +255,8 @@ class MPCCBF:
                 d_h + _alpha1 * _alpha2 * h_k
         else:
             raise NotImplementedError('Model not implemented')
-
+        
+        print(f"d_h: {d_h} | h_k: {h_k} | cbf_constraint: {cbf_constraint}")
         return cbf_constraint
 
     def create_simulator(self):
@@ -307,12 +276,16 @@ class MPCCBF:
         
         if obs is None or len(obs) == 0:
             # No obstacles detected, set 5 dummy obstacles far away
-            self.obs = np.tile(np.array([1000, 1000, 0]), (5, 1))
+            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0]), (5, 1))
         else:
-            num_obstacles = len(obs)
+            obs = np.array(obs)
+            if obs.shape[1] >= 5:
+                        obs = obs[:, 0:5]
+            num_obstacles = obs.shape[0]
+
             if num_obstacles < 5:
                 # Add dummy obstacles for missing ones
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0]), (5 - num_obstacles, 1))
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0]), (5 - num_obstacles, 1))
                 self.obs = np.vstack([obs, dummy_obstacles])
             else:
                 # Use the detected obstacles directly (up to 5)
@@ -328,23 +301,13 @@ class MPCCBF:
         if control_ref['state_machine'] != 'track':
             # if outer loop is doing something else, just return the reference
             return control_ref['u_ref']
-        
+
         # Solve MPC problem
         u = self.mpc.make_step(robot_state)
 
         # Update simulator and estimator
         y_next = self.simulator.make_step(u)
         x_next = self.estimator.make_step(y_next)
-
-        if self.show_mpc_traj:
-            self.graphics.plot_results()
-            self.graphics.plot_predictions()
-            self.graphics.reset_axes()
-
-            plt.figure(self.fig.number)
-            self.fig.canvas.draw_idle()
-            self.fig.canvas.flush_events()
-            plt.pause(0.001)
 
         # if nearest_obs is not None:
         #     cbf_constraint = self.compute_cbf_constraint(

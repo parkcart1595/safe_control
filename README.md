@@ -134,15 +134,12 @@ First determine the specification of each robot (with different `id`), then run 
 
 Supported robot dynamics can be found in the [`robots/`](https://github.com/tkkim-robot/safe_control/tree/main/robots) directory:
 
-- `single_integrator2D`
-- `double_integrator2D`
-- `double_integrator2D with camera angle`: under development
 - `unicycle2D`
 - `dynamic_unicycle2D`: A unicycle model that uses velocity as state and acceleration as input.
+- `double_integrator2D`
+- `double_integrator2D with camera angle`: under development
 - `kinematic_bicycle2D`
 - `quad2d`: x - forward, z - vertical
-- `quad3d`: under development
-- `vtol2d`: x - forward, z - vertical
 
 ### Positional Control Algorithms
 
@@ -184,12 +181,12 @@ controller = LocalTrackingController(..., show_animation=True, save_animation=Tr
 If you find this repository useful, please consider citing our paper:
 
 ```
-@inproceedings{kim2025learning, 
+@inproceedings{kim2024learning, 
     author    = {Taekyung Kim and Robin Inho Kee and Dimitra Panagou},
     title     = {Learning to Refine Input Constrained Control Barrier Functions via Uncertainty-Aware Online Parameter Adaptation}, 
-    booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
+    booktitle = {{{arXiv} preprint {arXiv}:2409.14616}},
     shorttitle = {Online-Adaptive-CBF},
-    year      = {2025}
+    year      = {2024}
 }
 ```
 

@@ -64,18 +64,17 @@ class Plotting:
             main_ax.add_patch(
                 patches.Circle(
                     (ox, oy), r,
-                    edgecolor='black',
-                    facecolor='gray',
-                    fill=True
+                    # edgecolor='black',
+                    # facecolor='gray',
+                    edgecolor='black', facecolor='none', linestyle='--'
+                    # fill=True
                 )
             )
 
         main_ax.set_title(name)
-        eps = 0.015
-        eps_x = (self.env.x_range[1] - self.env.x_range[0])  * eps
-        eps_y = (self.env.y_range[1] - self.env.y_range[0]) * eps
-        main_ax.set_xlim(self.env.x_range[0] - eps_x, self.env.x_range[1] + eps_x)
-        main_ax.set_ylim(self.env.y_range[0] - eps_y, self.env.y_range[1] + eps_y)
+        eps = 0.2
+        main_ax.set_xlim(self.env.x_range[0] - eps, self.env.x_range[1] + eps)
+        main_ax.set_ylim(self.env.y_range[0] - eps, self.env.y_range[1] + eps)
         main_ax.set_aspect('equal', adjustable='box')
         plt.tight_layout()
 
