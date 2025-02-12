@@ -226,15 +226,6 @@ class KinematicBicycle2D_C3BF:
         obs_vel_x = obs[3][0]
         obs_vel_y = obs[4][0]
 
-
-        # Calculate escape time
-        G = np.copy(G.reshape(-1, 1))  # goal state
-        theta_d = np.arctan2(G[1, 0] - X[1, 0], G[0, 0] - X[0, 0])
-        error_theta = angle_normalize(theta_d - X[2, 0])
-        T_turn = np.abs(error_theta) / self.robot_spec['beta_max']
-        T_brake = v / self.robot_spec['a_max']
-        T_esc =  T_turn + T_brake
-
         # Combine radius R
         ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision radius
 
@@ -251,6 +242,14 @@ class KinematicBicycle2D_C3BF:
 
         p_rel_mag = np.linalg.norm(p_rel)
         v_rel_mag = np.linalg.norm(v_rel)
+
+        # Calculate escape time
+        G = np.copy(G.reshape(-1, 1))  # goal state
+        theta_d = np.arctan2(G[1, 0] - X[1, 0], G[0, 0] - X[0, 0])
+        error_theta = angle_normalize(theta_d - X[2, 0])
+        T_turn = np.abs(error_theta) / self.robot_spec['beta_max']
+        T_brake = v_rel_mag / self.robot_spec['a_max']
+        T_esc =  T_turn + T_brake
 
         # Compute phi and psi for dc3bf
         dot_prod = np.dot(p_rel.T, -v_rel)[0, 0]
