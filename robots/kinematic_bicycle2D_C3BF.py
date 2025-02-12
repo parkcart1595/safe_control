@@ -211,8 +211,8 @@ class KinematicBicycle2D_C3BF:
             h           : scalar, the C3BF value
             dh_dx       : (1, 4) array, gradient of h
 
-        The barrier is of "relative degree of 1"
-            h_dot = ∂h/∂x ⋅ f(x) + ∂h_dot/∂x ⋅ g(x) ⋅ u
+        The barrier is of "relative degree of 1" ???
+            h_dot = dist_dot - v_rel / u_max * (v_rel_dot * p_rel + v_rel * p_rel_dot)
 
         Define h from the collision cone idea:
             p_rel = [obs_x - x, obs_y - y]
