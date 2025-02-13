@@ -2,21 +2,25 @@ from robots.kinematic_bicycle2D import KinematicBicycle2D
 import numpy as np
 import casadi as ca
 
+"""
+It uses kinematic bicycle 2D model as base class and only overwrite
+two CBF functions for collision cone CBF (C3BF) counterparts:
+ref: asdfasd/C3BF/arxiv.com
+"""
+
 class KinematicBicycle2D_C3BF(KinematicBicycle2D):
     def __init__(self, dt, robot_spec):
         super().__init__(dt, robot_spec)
-        self.state = np.zeros((4, 1))
-
-    def f_casadi(self, X):
-        """ Wrapper for f() that ensures compatibility with MPCCBF """
-        return self.f(X, casadi=True)
+    # def f_casadi(self, X):
+    #     """ Wrapper for f() that ensures compatibility with MPCCBF """
+    #     return self.f(X, casadi=True)
     
-    def g_casadi(self, X):
-        """ Wrapper for g() that ensures compatibility with MPCCBF """
-        return self.g(X, casadi=True)
+    # def g_casadi(self, X):
+    #     """ Wrapper for g() that ensures compatibility with MPCCBF """
+    #     return self.g(X, casadi=True)
     
-    def get_position(self):
-        return self.state[:2].flatten()
+    # def get_position(self):
+    #     return self.state[:2].flatten()
 
     def agent_barrier(self, X, obs, robot_radius, beta=1.0):
         """
@@ -38,8 +42,9 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         
         # Check if obstacles have velocity components (static or moving)
         if obs.shape[0] > 3:
-            obs_vel_x = obs[3][0]
-            obs_vel_y = obs[4][0]
+            obs_vel_x = obs[3, 0]
+            obs_vel_y = obs[4, 0]
+
         else:
             obs_vel_x = 0.0
             obs_vel_y = 0.0
@@ -48,8 +53,8 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         ego_dim = (obs[2][0] + robot_radius) * beta   # Total collision safe radius
 
         # Compute relative position and velocity
-        p_rel = np.array([[obs[0][0] - X[0, 0]], 
-                        [obs[1][0] - X[1, 0]]])
+        p_rel = np.array([[obs[0, 0] - X[0, 0]], 
+                        [obs[1, 0] - X[1, 0]]])
         v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
                         [obs_vel_y - v * np.sin(theta)]])
 
