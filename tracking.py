@@ -468,7 +468,7 @@ class LocalTrackingController:
                        'goal': self.goal}
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, self.nearest_obs)
+                self.robot.X, control_ref, self.nearest_multi_obs)
             self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
@@ -572,7 +572,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'VTOL2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -616,6 +616,16 @@ def single_agent_main(control_type):
             'sensor': 'rgbd',
             'radius': 0.5
         }
+        dynamic_obs = []  
+        for i, obs_info in enumerate(known_obs):
+            ox, oy, r = obs_info[:3]
+            if i % 2 == 0:
+                vx, vy = 0.1, 0.05
+            else:
+                vx, vy = -0.1, 0.05
+            dynamic_obs.append([ox, oy, r, vx, vy])
+        known_obs = np.array(dynamic_obs)
+
     elif model == 'KinematicBicycle2D_C3BF':
         robot_spec = {
             'model': 'KinematicBicycle2D_C3BF',
@@ -725,7 +735,7 @@ def single_agent_main(control_type):
                                                   dt=dt,
                                                   show_animation=True,
                                                   save_animation=True,
-                                                  show_mpc_traj=True,
+                                                  show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
@@ -816,7 +826,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    single_agent_main('cbf_qp')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
