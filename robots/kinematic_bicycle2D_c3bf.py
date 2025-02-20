@@ -32,19 +32,19 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         
         # Check if obstacles have velocity components (static or moving)
         if obs.shape[0] > 3:
-            obs_vel_x = obs[3, 0]
-            obs_vel_y = obs[4, 0]
+            obs_vel_x = obs[3]
+            obs_vel_y = obs[4]
 
         else:
             obs_vel_x = 0.0
             obs_vel_y = 0.0
 
         # Combine radius R
-        ego_dim = (obs[2, 0] + robot_radius) * beta # Total collision safe radius
+        ego_dim = (obs[2] + robot_radius) * beta # Total collision safe radius
 
         # Compute relative position and velocity
-        p_rel = np.array([[obs[0, 0] - X[0, 0]], 
-                        [obs[1, 0] - X[1, 0]]])
+        p_rel = np.array([[obs[0] - X[0, 0]], 
+                        [obs[1] - X[1, 0]]])
         v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
                         [obs_vel_y - v * np.sin(theta)]])
 
@@ -74,12 +74,12 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
 
         return h, dh_dx
 
-    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.01):
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.0):
         '''Discrete Time C3BF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
 
-        def h(x, obs, robot_radius, beta=1.01):
+        def h(x, obs, robot_radius, beta=1.0):
             '''Computes C3BF h(x) = <p_rel, v_rel> + ||p_rel||*||v_rel||*cos(phi)'''
             theta = x[2, 0]
             v = x[3, 0]

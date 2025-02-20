@@ -342,6 +342,9 @@ class LocalTrackingController:
                 # check if the robot collides with the obstacle
                 distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
                 if distance < (obs[2] + robot_radius):
+                    print(f"collide with unknown obs")
+                    print(f"distance: {distance}")
+                    print(f"obs[2] + robot_max_dim: {obs[2] + robot_radius}")
                     return True
                 
         if self.obs is not None:
@@ -349,6 +352,9 @@ class LocalTrackingController:
                 # check if the robot collides with the obstacle
                 distance = np.linalg.norm(self.robot.X[:2, 0] - obs[:2])
                 if distance < (obs[2] + robot_radius):
+                    print(f"collide with known obs")
+                    print(f"distance: {distance}")
+                    print(f"obs[2] + robot_max_dim: {obs[2] + robot_radius}")
                     return True
 
         # Collision with the ground
@@ -469,7 +475,7 @@ class LocalTrackingController:
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-            self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
+            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
@@ -580,14 +586,21 @@ def single_agent_main(control_type):
         [12, 12, 0],
         [12, 2, 0]
     ]
+    waypoints = np.array(waypoints)
+    waypoints[:, :2] += 2
+    # # Define static obs
+    # known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 9.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
+    #                     [10.0, 7.3, 0.4],
+    #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 13.0, 0.6]])
 
     # Define static obs
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
+    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 9.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                         [10.0, 7.3, 0.4],
-                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 13.0, 0.6]])
+    known_obs[:, :2] += 2
 
-    env_width = 14.0
-    env_height = 14.0
+    env_width = 18.0
+    env_height = 18.0
     if model == 'SingleIntegrator2D':
         robot_spec = {
             'model': 'SingleIntegrator2D',
@@ -620,9 +633,9 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 0:
-                vx, vy = 0.1, 0.05
+                vx, vy = 0.1, 0.1
             else:
-                vx, vy = -0.1, 0.05
+                vx, vy = -0.1, 0.1
             dynamic_obs.append([ox, oy, r, vx, vy])
         known_obs = np.array(dynamic_obs)
 
@@ -630,6 +643,7 @@ def single_agent_main(control_type):
         robot_spec = {
             'model': 'KinematicBicycle2D_C3BF',
             'a_max': 0.5,
+            'sensor': 'rgbd',
             'radius': 0.5
         }
         dynamic_obs = []  
