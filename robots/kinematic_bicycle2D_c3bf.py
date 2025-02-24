@@ -53,6 +53,8 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         v_rel_x = v_rel[0, 0]
         v_rel_y = v_rel[1, 0]
 
+        rob_vel = np.sqrt(v)
+
         p_rel_mag = np.linalg.norm(p_rel)
         v_rel_mag = np.linalg.norm(v_rel)
 
@@ -62,10 +64,10 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         sqrt_term = np.sqrt(cal_max)
         cos_phi = sqrt_term / (p_rel_mag + eps)
 
-        k_p, k_v = 2.0, 2.0
+        k_p, k_v = 10.0, 10.0
 
         penalty_pterm = np.exp(-k_p * p_rel_mag)
-        penalty_vterm = np.exp(-k_v * v_rel_mag)
+        penalty_vterm = np.exp(-k_v * rob_vel)
         penalty_cone = (1 - penalty_pterm) * (1 - penalty_vterm)
         
         # Compute h
@@ -105,11 +107,19 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
             p_rel = ca.vertcat(obs[0][0] - x[0, 0], obs[1][0] - x[1, 0])
             v_rel = ca.vertcat(obs_vel_x - v * ca.cos(theta), obs_vel_y - v * ca.sin(theta))
 
+            rob_vel_mag = ca.norm_2(v)
             p_rel_mag = ca.norm_2(p_rel)
             v_rel_mag = ca.norm_2(v_rel)
 
+            # Compute penalty terms
+            k_p, k_v = 1.0, 1.0
+
+            penalty_pterm = ca.exp(-k_p * p_rel_mag)
+            penalty_vterm = ca.exp(-k_v * rob_vel_mag)
+            penalty_cone = (1 - penalty_pterm) * (1 - penalty_vterm)
+
             # Compute h
-            h = (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag
+            h = (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * penalty_cone * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag
                 
             return h
 
