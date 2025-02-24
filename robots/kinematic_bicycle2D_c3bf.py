@@ -64,7 +64,7 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         sqrt_term = np.sqrt(cal_max)
         cos_phi = sqrt_term / (p_rel_mag + eps)
 
-        k_p, k_v = 10.0, 10.0
+        k_p, k_v = 1.0, 2.5
 
         penalty_pterm = np.exp(-k_p * p_rel_mag)
         penalty_vterm = np.exp(-k_v * rob_vel)
