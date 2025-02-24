@@ -578,7 +578,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'KinematicBicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -597,6 +597,7 @@ def single_agent_main(control_type):
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 9.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                         [10.0, 7.3, 0.4],
                         [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 13.0, 0.6]])
+    # known_obs = np.array([[2.2, 5.0, 0.2],[3.0, 5.0, 0.2]])
     known_obs[:, :2] += 2
 
     env_width = 18.0
@@ -633,9 +634,9 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 0:
-                vx, vy = 0.1, 0.1
+                vx, vy = 0.3, 0.3
             else:
-                vx, vy = -0.1, 0.1
+                vx, vy = -0.3, 0.3
             dynamic_obs.append([ox, oy, r, vx, vy])
         known_obs = np.array(dynamic_obs)
 
@@ -650,9 +651,9 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 0:
-                vx, vy = 0.1, 0.05
+                vx, vy = 0.2, 0.2
             else:
-                vx, vy = -0.1, 0.05
+                vx, vy = -0.3, 0.3
             dynamic_obs.append([ox, oy, r, vx, vy])
         known_obs = np.array(dynamic_obs)
 

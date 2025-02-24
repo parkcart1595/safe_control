@@ -169,13 +169,13 @@ class KinematicBicycle2D:
             [[0, 0]]), axis=1) + 2 * (X[0:2] - obsX[0:2]).T @ df_dx[0:2, :]
         return h, h_dot, dh_dot_dx
 
-    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.0):
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.1):
         '''Discrete Time High Order CBF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
         x_k2 = self.step(x_k1, u_k, casadi=True)
 
-        def h(x, obs, robot_radius, beta=1.0):
+        def h(x, obs, robot_radius, beta=1.1):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
             x_obs = obs[0]
             y_obs = obs[1]
