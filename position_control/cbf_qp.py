@@ -82,22 +82,22 @@ class CBFQP:
 
         self.cbf_controller = cp.Problem(objective, constraints)
 
-    def solve_control_problem(self, robot_state, control_ref, obs_list):
+    def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # 3. Update the CBF constraints
-        for i in range(min(self.num_obs, len(obs_list))):
-            obs = obs_list[i]
-            if obs is None:
-                # deactivate the CBF constraints
-                self.A1.value = np.zeros_like(self.A1.value)
-                self.b1.value = np.zeros_like(self.b1.value)
-            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
-                h, dh_dx = self.robot.agent_barrier(obs)
-                self.A1.value[i,:] = dh_dx @ self.robot.g()
-                self.b1.value[i,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
-            elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D']:
-                h, h_dot, dh_dot_dx = self.robot.agent_barrier(obs)
-                self.A1.value[i,:] = dh_dot_dx @ self.robot.g()
-                self.b1.value[i,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
+        # for i in range(min(self.num_obs, len(obs_list))):
+        #     obs = obs_list[i]
+        if nearest_obs is None:
+            # deactivate the CBF constraints
+            self.A1.value = np.zeros_like(self.A1.value)
+            self.b1.value = np.zeros_like(self.b1.value)
+        elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
+            h, dh_dx = self.robot.agent_barrier(nearest_obs)
+            self.A1.value[0,:] = dh_dx @ self.robot.g()
+            self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D']:
+            h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
+            self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
+            self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
         
         self.u_ref.value = control_ref['u_ref']
         # 4. Solve this yields a new 'self.u'

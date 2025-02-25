@@ -317,8 +317,22 @@ class LocalTrackingController:
     def step_dyn_obs(self):
         """if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step"""
         if len(self.obs) != 0 and self.obs.shape[1] >= 5:
-            self.obs[:, 0] += self.obs[:, 3] * self.dt
-            self.obs[:, 1] += self.obs[:, 4] * self.dt
+            # self.obs[:, 0] += self.obs[:, 3] * self.dt
+            # self.obs[:, 1] += self.obs[:, 4] * self.dt
+            for i, obs_info in enumerate(self.obs):
+                # obs_info = [x, y, r, vx, vy, y_min, y_max]
+                self.obs[i, 0] += self.obs[i, 3] * self.dt  # x += vx*dt (if vx != 0)
+                self.obs[i, 1] += self.obs[i, 4] * self.dt  # y += vy*dt
+
+                # Flip velocity if it hits top or bottom
+                y_min = self.obs[i, 5]
+                y_max = self.obs[i, 6]
+                if self.obs[i, 1] >= y_max:
+                    self.obs[i, 1] = y_max
+                    self.obs[i, 4] = -abs(self.obs[i, 4])  # flip to negative
+                elif self.obs[i, 1] <= y_min:
+                    self.obs[i, 1] = y_min
+                    self.obs[i, 4] = abs(self.obs[i, 4])   # flip to positive
     
     def render_dyn_obs(self):
         for i, obs_info in enumerate(self.obs):
@@ -473,9 +487,12 @@ class LocalTrackingController:
                        'u_ref': u_ref,
                        'goal': self.goal}
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
+            # u = self.pos_controller.solve_control_problem(
+            #     self.robot.X, control_ref, self.nearest_multi_obs)
+            # self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
             u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, self.nearest_multi_obs)
-            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
+                self.robot.X, control_ref, self.nearest_obs)
+            self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
@@ -580,29 +597,37 @@ def single_agent_main(control_type):
     dt = 0.05
     model = 'KinematicBicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
+    # waypoints = [
+    #     [2, 2, math.pi/2],
+    #     [2, 12, 0],
+    #     [12, 12, 0],
+    #     [12, 2, 0]
+    # ]
     waypoints = [
-        [2, 2, math.pi/2],
-        [2, 12, 0],
-        [12, 12, 0],
-        [12, 2, 0]
+         [0, 7, 0],
+         [18, 7, 0],
     ]
     waypoints = np.array(waypoints)
-    waypoints[:, :2] += 2
+    # waypoints[:, :2] += 2
     # # Define static obs
     # known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 9.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
     #                     [10.0, 7.3, 0.4],
     #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 13.0, 0.6]])
 
     # Define static obs
-    # known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 9.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
-    #                     [10.0, 7.3, 0.4],
-    #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 3.0, 0.8], [13.5, 9.0, 0.6]])
+    known_obs = np.array([
+        [5.0, 2.0, 0.5],  # obstacle 1
+        [7.0, 10.0, 0.5],  # obstacle 2
+        [9.0, 0.0, 0.5],  # obstacle 3
+        [11.0, 12.0, 0.5],  # obstacle 4
+        [13.0, 1.0, 0.5],  # obstacle 5
+    ])
     # known_obs = np.array([[-1.0, 9.0, 0.5]])
-    known_obs = np.array([[5.5, 5.0, 0.5]])
+    # known_obs = np.array([[4.0, 6.0, 0.8]])
     known_obs[:, :2] += 2
 
-    env_width = 18.0
-    env_height = 18.0
+    env_width = 20.0
+    env_height = 15.0
     if model == 'SingleIntegrator2D':
         robot_spec = {
             'model': 'SingleIntegrator2D',
@@ -652,11 +677,13 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 1:
-                vx, vy = 0.6, -0.5
+                vx, vy = 0.0, -0.5
             else:
-                vx, vy = -0.6, 0.6
-            dynamic_obs.append([ox, oy, r, vx, vy])
+                vx, vy = 0.0, 0.5
+            y_min, y_max = 0.0, 12.0
+            dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
+        print(known_obs)
 
     elif model == 'Quad2D':
         robot_spec = {
@@ -739,7 +766,7 @@ def single_agent_main(control_type):
     else:
         x_init = np.append(waypoints[0], 1.0)
     
-    if known_obs.shape[1] != 5:
+    if known_obs.shape[1] != 7:
         known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2)))) # Set static obs velocity 0.0 at (5, 5)
 
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)

@@ -63,7 +63,7 @@ class Plotting:
         for obs_info in self.obs_circle:
             if obs_info.shape[0] == 3:
                 ox, oy, r = obs_info
-            elif obs_info.shape[0] == 5:
+            elif obs_info.shape[0] == 7:
                 continue
             main_ax.add_patch(
                 patches.Circle(

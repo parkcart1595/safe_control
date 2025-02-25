@@ -30,21 +30,40 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         theta = X[2, 0]
         v = X[3, 0]
         
+        # # Check if obstacles have velocity components (static or moving)
+        # if obs.shape[0] > 3:
+        #     obs_vel_x = obs[3]
+        #     obs_vel_y = obs[4]
+
+        # else:
+        #     obs_vel_x = 0.0
+        #     obs_vel_y = 0.0
+
+        # # Combine radius R
+        # ego_dim = (obs[2] + robot_radius) * beta # Total collision safe radius
+
+        # # Compute relative position and velocity
+        # p_rel = np.array([[obs[0] - X[0, 0]], 
+        #                 [obs[1] - X[1, 0]]])
+        # v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
+        #                 [obs_vel_y - v * np.sin(theta)]])
+        
+        ############### For nearest_obs setting
         # Check if obstacles have velocity components (static or moving)
         if obs.shape[0] > 3:
-            obs_vel_x = obs[3]
-            obs_vel_y = obs[4]
+            obs_vel_x = obs[3, 0]
+            obs_vel_y = obs[4, 0]
 
         else:
             obs_vel_x = 0.0
             obs_vel_y = 0.0
 
         # Combine radius R
-        ego_dim = (obs[2] + robot_radius) * beta # Total collision safe radius
+        ego_dim = (obs[2, 0] + robot_radius) * beta # Total collision safe radius
 
         # Compute relative position and velocity
-        p_rel = np.array([[obs[0] - X[0, 0]], 
-                        [obs[1] - X[1, 0]]])
+        p_rel = np.array([[obs[0, 0] - X[0, 0]], 
+                        [obs[1, 0] - X[1, 0]]])
         v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
                         [obs_vel_y - v * np.sin(theta)]])
 
@@ -64,13 +83,15 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         sqrt_term = np.sqrt(cal_max)
         cos_phi = sqrt_term / (p_rel_mag + eps)
 
-        k_p, k_v = 1.0, 2.5
+        k_p, k_v = 1.0, 10.0
 
-        penalty_pterm = np.exp(-k_p * p_rel_mag)
-        penalty_vterm = np.exp(-k_v * rob_vel)
+        penalty_pterm = np.exp(-k_p * sqrt_term)
+        penalty_vterm = np.exp(-k_v * v_rel_mag)
         penalty_cone = (1 - penalty_pterm) * (1 - penalty_vterm)
         
         # Compute h
+        # penalty_cone = 1.0
+        print(penalty_cone)
         h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * penalty_cone * cos_phi
 
         # Compute dh_dx
