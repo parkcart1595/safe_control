@@ -616,7 +616,7 @@ def single_agent_main(control_type):
 
     # Define static obs
     known_obs = np.array([
-        [5.0, 2.0, 0.5],  # obstacle 1
+        [5.0, 4.0, 0.5],  # obstacle 1
         [7.0, 10.0, 0.5],  # obstacle 2
         [9.0, 0.0, 0.5],  # obstacle 3
         [11.0, 12.0, 0.5],  # obstacle 4
@@ -677,9 +677,9 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 1:
-                vx, vy = 0.0, -0.5
+                vx, vy = 0.0, -0.3
             else:
-                vx, vy = 0.0, 0.5
+                vx, vy = 0.0, 0.3
             y_min, y_max = 0.0, 12.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
@@ -869,7 +869,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('cbf_qp')
+    single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')

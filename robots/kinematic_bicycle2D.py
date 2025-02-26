@@ -50,7 +50,7 @@ class KinematicBicycle2D:
         if 'rear_ax_distance' not in self.robot_spec:
             self.robot_spec['rear_ax_dist'] = 0.3
         if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 1.5
+            self.robot_spec['v_max'] = 2.0
         if 'a_max' not in self.robot_spec:
             self.robot_spec['a_max'] = 0.5
         if 'delta_max' not in self.robot_spec:

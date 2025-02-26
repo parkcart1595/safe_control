@@ -128,20 +128,32 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
             p_rel = ca.vertcat(obs[0][0] - x[0, 0], obs[1][0] - x[1, 0])
             v_rel = ca.vertcat(obs_vel_x - v * ca.cos(theta), obs_vel_y - v * ca.sin(theta))
 
-            rob_vel_mag = ca.norm_2(v)
+            # Compute the rotation angle: align p_rel with y-axis
+            rot_angle = ca.atan2(p_rel[1], p_rel[0])
+
+            # Rotation matrix for transforming to the new coordinate frame:
+            # Using R(-rot_angle) to rotate vectors such that p_rel aligns with the y-axis
+            R = ca.vertcat( 
+                ca.horzcat(ca.cos(ca.pi/2 - rot_angle), -ca.sin(ca.pi/2 - rot_angle)),
+                ca.horzcat(ca.sin(ca.pi/2 - rot_angle), ca.cos(ca.pi/2 - rot_angle))
+            )
+            # R = ca.vertcat( 
+            #     ca.horzcat(ca.cos(rot_angle), ca.sin(rot_angle)),
+            #     ca.horzcat(-ca.sin(rot_angle), ca.cos(rot_angle))
+            # )
+
+            # Transform v_rel into the new coordinate frame
+            v_rel_new = ca.mtimes(R, v_rel)
+
             p_rel_mag = ca.norm_2(p_rel)
             v_rel_mag = ca.norm_2(v_rel)
 
-            # Compute penalty terms
-            k_p, k_v = 1.0, 1.0
-
-            penalty_pterm = ca.exp(-k_p * p_rel_mag)
-            penalty_vterm = ca.exp(-k_v * rob_vel_mag)
-            penalty_cone = (1 - penalty_pterm) * (1 - penalty_vterm)
+            dist_pen = 0.1 * (p_rel_mag**2 - ego_dim**2)
+            vel_pen = 0.01 * v_rel_mag
 
             # Compute h
-            h = (p_rel.T @ v_rel)[0, 0] + p_rel_mag * v_rel_mag * penalty_cone * ca.sqrt(ca.fmax(p_rel_mag**2 - ego_dim**2, 0)) / p_rel_mag
-                
+            h = v_rel_new[1] - (-vel_pen * (v_rel_new[0])**2 - dist_pen)
+
             return h
 
         h_k1 = h(x_k1, obs, robot_radius, beta)
