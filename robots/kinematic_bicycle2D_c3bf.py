@@ -51,55 +51,69 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         ############### For nearest_obs setting
         # Check if obstacles have velocity components (static or moving)
         if obs.shape[0] > 3:
-            obs_vel_x = obs[3, 0]
-            obs_vel_y = obs[4, 0]
+            obs_vel_x = obs[3]
+            obs_vel_y = obs[4]
 
         else:
             obs_vel_x = 0.0
             obs_vel_y = 0.0
 
         # Combine radius R
-        ego_dim = (obs[2, 0] + robot_radius) * beta # Total collision safe radius
+        ego_dim = (obs[2] + robot_radius) * beta # Total collision safe radius
 
         # Compute relative position and velocity
-        p_rel = np.array([[obs[0, 0] - X[0, 0]], 
-                        [obs[1, 0] - X[1, 0]]])
+        p_rel = np.array([[obs[0] - X[0, 0]], 
+                        [obs[1] - X[1, 0]]])
         v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
                         [obs_vel_y - v * np.sin(theta)]])
+    
 
         p_rel_x = p_rel[0, 0]
         p_rel_y = p_rel[1, 0]
         v_rel_x = v_rel[0, 0]
         v_rel_y = v_rel[1, 0]
 
-        rob_vel = np.sqrt(v)
+        rot_angle = np.arctan2(p_rel_y, p_rel_x)
+        rot_angle_dotx = ((-p_rel_y) / (p_rel_y**2 + p_rel_x**2))
+        rot_angle_doty = ((p_rel_x) / (p_rel_y**2 + p_rel_x**2))
+
+        # Rotation matrix for angle
+        angle = np.pi/2 - rot_angle
+        R = np.array([[np.cos(angle), -np.sin(angle)],
+                      [np.sin(angle),  np.cos(angle)]])
+        
+        # Transform v_rel into the new coordinate frame
+        v_rel_new = R @ v_rel
+
+        v_rel_new_x = v_rel_new[0, 0]
+        v_rel_new_y = v_rel_new[1, 0]
 
         p_rel_mag = np.linalg.norm(p_rel)
         v_rel_mag = np.linalg.norm(v_rel)
+        v_rel_new_mag = np.linalg.norm(v_rel_new)
 
-        # Compute cos_phi safely for c3bf
+        # Compute d_safe safely
         eps = 1e-6
-        cal_max = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
-        sqrt_term = np.sqrt(cal_max)
-        cos_phi = sqrt_term / (p_rel_mag + eps)
+        d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
 
-        k_p, k_v = 1.0, 10.0
-
-        penalty_pterm = np.exp(-k_p * sqrt_term)
-        penalty_vterm = np.exp(-k_v * v_rel_mag)
-        penalty_cone = (1 - penalty_pterm) * (1 - penalty_vterm)
+        # Penalty term
+        # a, b = 0.01, 1.5
+        a, b = 0.5, 0.1
+        # vel_pen = a * v_rel_mag
+        vel_pen = a * v_rel_mag
+        dist_pen = b * np.sqrt(d_safe)
         
-        # Compute h
-        # penalty_cone = 1.0
-        print(penalty_cone)
-        h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * penalty_cone * cos_phi
+        # Barrier function h(x)
+        h = v_rel_new[1, 0] - (-vel_pen * (v_rel_new[0, 0]**2) - dist_pen)
+        print(f"v_rel_new[1,0]: {v_rel_new[1,0]} : -vel_pen : {-vel_pen} : dist_pen: {dist_pen}")
+        print(h)
 
         # Compute dh_dx
         dh_dx = np.zeros((1, 4))
-        dh_dx[0, 0] = -v_rel_x - v_rel_mag * penalty_cone * p_rel_x / (sqrt_term + eps) + v_rel_mag * (k_p * penalty_pterm * (1 - penalty_vterm) * (-p_rel_x) / p_rel_mag) * (sqrt_term + eps)
-        dh_dx[0, 1] = -v_rel_y - v_rel_mag * penalty_cone * p_rel_y / (sqrt_term + eps) + v_rel_mag * (k_p * penalty_pterm * (1 - penalty_vterm) * (-p_rel_y) / p_rel_mag) * (sqrt_term + eps) 
-        dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta))) + v_rel_mag * (-k_v * penalty_vterm * (1 - penalty_pterm) * v * (v_rel_x * np.sin(theta) - v_rel_y * np.cos(theta)) / v_rel_mag) * (sqrt_term + eps)
-        dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + (sqrt_term + eps) / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta))) + v_rel_mag * (-k_v * penalty_vterm * (1 - penalty_pterm) * (-v_rel_x * np.cos(theta) -v_rel_y * np.sin(theta)) / v_rel_mag) * (sqrt_term + eps)
+        dh_dx[0, 0] = (-(v_rel_x) * np.sin(rot_angle) + v_rel_y * np.cos(rot_angle)) * rot_angle_dotx + a * v_rel_mag * v_rel_new_x * (v_rel_x * np.cos(rot_angle) + v_rel_y * np.sin(rot_angle)) * rot_angle_dotx + b * (-p_rel_x) / np.sqrt(d_safe + eps)
+        dh_dx[0, 1] = (-(v_rel_x) * np.sin(rot_angle) + v_rel_y * np.cos(rot_angle)) * rot_angle_doty + a * v_rel_mag * v_rel_new_x * (v_rel_x * np.cos(rot_angle) + v_rel_y * np.sin(rot_angle)) * rot_angle_doty + b * (-p_rel_y) / np.sqrt(d_safe + eps)
+        dh_dx[0, 2] = v * np.sin(theta) * np.cos(rot_angle) - v * np.cos(theta) * np.sin(rot_angle) + a * (obs_vel_x * v * np.sin(theta) - obs_vel_y * v * np.cos(theta)) * v_rel_new_x**2 / v_rel_mag + 2 * a * v_rel_mag * v_rel_new_x * (v * np.sin(theta) * np.cos(rot_angle) + v * np.cos(theta) * np.cos(rot_angle))
+        dh_dx[0, 3] = - np.cos(theta) * np.cos(rot_angle) - v * np.sin(theta) * np.sin(rot_angle) + a * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) * v_rel_new_x**2 / v_rel_mag + 2 * a * v_rel_mag * v_rel_new_x * (- np.cos(theta) * np.sin(rot_angle) + np.sin(theta) * np.cos(rot_angle))
 
         return h, dh_dx
 
@@ -148,8 +162,8 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
             p_rel_mag = ca.norm_2(p_rel)
             v_rel_mag = ca.norm_2(v_rel)
 
-            dist_pen = 0.1 * (p_rel_mag**2 - ego_dim**2)
-            vel_pen = 0.01 * v_rel_mag
+            dist_pen = 10.0 * (p_rel_mag**2 - ego_dim**2)
+            vel_pen = 0.1 * v_rel_mag
 
             # Compute h
             h = v_rel_new[1] - (-vel_pen * (v_rel_new[0])**2 - dist_pen)

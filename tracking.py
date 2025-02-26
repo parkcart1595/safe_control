@@ -316,7 +316,7 @@ class LocalTrackingController:
     # Update dynamic obs position
     def step_dyn_obs(self):
         """if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step"""
-        if len(self.obs) != 0 and self.obs.shape[1] >= 5:
+        if len(self.obs) != 0 and self.obs.shape[1] >= 7:
             # self.obs[:, 0] += self.obs[:, 3] * self.dt
             # self.obs[:, 1] += self.obs[:, 4] * self.dt
             for i, obs_info in enumerate(self.obs):
@@ -487,16 +487,16 @@ class LocalTrackingController:
                        'u_ref': u_ref,
                        'goal': self.goal}
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
-            # u = self.pos_controller.solve_control_problem(
-            #     self.robot.X, control_ref, self.nearest_multi_obs)
-            # self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
             u = self.pos_controller.solve_control_problem(
-                self.robot.X, control_ref, self.nearest_obs)
-            self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
+                self.robot.X, control_ref, self.nearest_multi_obs)
+            self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
+            # u = self.pos_controller.solve_control_problem(
+            #     self.robot.X, control_ref, self.nearest_obs)
+            # self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
+            self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
         plt.figure(self.fig.number)
 
         # 7. Raise an error if the QP is infeasible, or the robot collides with the obstacle
@@ -604,8 +604,8 @@ def single_agent_main(control_type):
     #     [12, 2, 0]
     # ]
     waypoints = [
-         [0, 7, 0],
-         [18, 7, 0],
+         [5, 8, 0],
+         [23, 8, 0],
     ]
     waypoints = np.array(waypoints)
     # waypoints[:, :2] += 2
@@ -616,17 +616,17 @@ def single_agent_main(control_type):
 
     # Define static obs
     known_obs = np.array([
-        [5.0, 4.0, 0.5],  # obstacle 1
-        [7.0, 10.0, 0.5],  # obstacle 2
-        [9.0, 0.0, 0.5],  # obstacle 3
-        [11.0, 12.0, 0.5],  # obstacle 4
-        [13.0, 1.0, 0.5],  # obstacle 5
+        [8.0, 4.0, 0.5],  # obstacle 1
+        [10.0, 10.0, 0.5],  # obstacle 2
+        [12.0, 2.0, 0.5],  # obstacle 3
+        [14.0, 11.0, 0.5],  # obstacle 4
+        [16.0, 1.0, 0.5],  # obstacle 5
     ])
     # known_obs = np.array([[-1.0, 9.0, 0.5]])
     # known_obs = np.array([[4.0, 6.0, 0.8]])
     known_obs[:, :2] += 2
 
-    env_width = 20.0
+    env_width = 25.0
     env_height = 15.0
     if model == 'SingleIntegrator2D':
         robot_spec = {
@@ -869,7 +869,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    single_agent_main('cbf_qp')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
