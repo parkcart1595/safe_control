@@ -162,8 +162,10 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
             p_rel_mag = ca.norm_2(p_rel)
             v_rel_mag = ca.norm_2(v_rel)
 
-            dist_pen = 10.0 * (p_rel_mag**2 - ego_dim**2)
-            vel_pen = 0.1 * v_rel_mag
+            a, b = 1.0, 1.0
+            dist_pen = b * np.sqrt(p_rel_mag**2 - ego_dim**2)
+            # vel_pen = a * v_rel_mag
+            vel_pen = a * ego_dim / np.sqrt(p_rel_mag**2 - ego_dim**2)
 
             # Compute h
             h = v_rel_new[1] - (-vel_pen * (v_rel_new[0])**2 - dist_pen)
