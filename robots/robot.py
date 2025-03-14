@@ -577,8 +577,8 @@ class BaseRobot:
 
             # Penalty term
             # a, b = 0.01, 1.5
-            a, b = 0.3, 0.1*5
-            vel_pen = a * v_rel_mag
+            a, b = 0.5, 0.5
+            vel_pen = a * np.sqrt(d_safe) / ego_dim
             dist_pen = b * np.sqrt(d_safe)
 
             rot_angle = np.arctan2(p_rel[1], p_rel[0])
@@ -589,7 +589,7 @@ class BaseRobot:
             L = 2.0
             x_new = np.linspace(-L, L, 200)
             y_new = -vel_pen * (x_new**2) - dist_pen
-            print(f"vel_pen: {vel_pen} | dist_pen: {dist_pen}")
+            # print(f"vel_pen: {vel_pen} | dist_pen: {dist_pen}")
 
             curve_points = []
             for x_val, y_val in zip(x_new, y_new):

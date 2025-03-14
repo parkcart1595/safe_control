@@ -23,7 +23,7 @@ class CBFQP:
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            self.cbf_param['alpha'] = 2.0
+            self.cbf_param['alpha'] = 1.0
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
@@ -103,7 +103,7 @@ class CBFQP:
         # 4. Solve this yields a new 'self.u'
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
 
-        # print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
+        print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
             
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status

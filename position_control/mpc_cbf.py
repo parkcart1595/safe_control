@@ -311,6 +311,9 @@ class MPCCBF:
         else:
             raise NotImplementedError('Model not implemented')
 
+
+        print(f'h_k: {h_k} | cbf constraint: {cbf_constraint}')
+
         return cbf_constraint
 
     def create_simulator(self):
