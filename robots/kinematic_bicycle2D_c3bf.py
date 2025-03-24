@@ -78,7 +78,7 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         rot_angle_doty = ((p_rel_x) / (p_rel_y**2 + p_rel_x**2))
 
         # Rotation matrix for angle
-        angle = np.pi/2 - rot_angle
+        angle = rot_angle - np.pi/2
         R = np.array([[np.cos(angle), -np.sin(angle)],
                       [np.sin(angle),  np.cos(angle)]])
         
@@ -98,7 +98,7 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
 
         # Penalty term
         # a, b = 0.01, 1.5
-        a, b = 1.0, 0.2
+        a, b = 1.0, 0.05
         # vel_pen = a * v_rel_mag
         vel_pen = a * np.sqrt(d_safe) / 2 * ego_dim # same as 1/tan(phi)
         dist_pen = b * np.sqrt(d_safe)
@@ -107,7 +107,9 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         h = v_rel_new[1, 0] - (-vel_pen * (v_rel_new[0, 0]**2) - dist_pen)
         print(f"v_rel_new[1,0]: {v_rel_new[1,0]} | -vel_pen : {-vel_pen} | dist_pen: {dist_pen}")
         print(h)
-
+        
+        # Compute h (C3BF)
+        # h = np.dot(p_rel.T, v_rel)[0, 0] + p_rel_mag * v_rel_mag * cos_phi
         # Compute dh_dx
         dh_dx = np.zeros((1, 4))
         # dh_dx[0, 0] = (-(v_rel_x) * np.sin(rot_angle) + v_rel_y * np.cos(rot_angle)) * rot_angle_dotx + a * v_rel_mag * v_rel_new_x * (v_rel_x * np.cos(rot_angle) + v_rel_y * np.sin(rot_angle)) * rot_angle_dotx + b * (-p_rel_x) / np.sqrt(d_safe + eps)

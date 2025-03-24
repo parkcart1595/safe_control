@@ -869,7 +869,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    single_agent_main('cbf_qp')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
