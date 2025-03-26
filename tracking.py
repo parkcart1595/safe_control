@@ -492,7 +492,7 @@ class LocalTrackingController:
             self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
             # u = self.pos_controller.solve_control_problem(
             #     self.robot.X, control_ref, self.nearest_obs)
-            # self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
+            # self.robot.draw_collision_quad(self.robot.X, [self.nearest_obs], self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
@@ -604,7 +604,7 @@ def single_agent_main(control_type):
     #     [12, 2, 0]
     # ]
     waypoints = [
-         [5, 8, 0],
+         [6, 8, 0],
          [23, 8, 0],
     ]
     waypoints = np.array(waypoints)
@@ -614,7 +614,7 @@ def single_agent_main(control_type):
     #                     [10.0, 7.3, 0.4],
     #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 13.0, 0.6]])
 
-    # Define static obs
+    # Define linear mov obs
     known_obs = np.array([
         [8.0, 4.0, 0.5],  # obstacle 1
         [10.0, 10.0, 0.5],  # obstacle 2

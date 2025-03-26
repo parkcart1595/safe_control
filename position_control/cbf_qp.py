@@ -83,7 +83,20 @@ class CBFQP:
         self.cbf_controller = cp.Problem(objective, constraints)
 
     def solve_control_problem(self, robot_state, control_ref, obs_list):
-        # 3. Update the CBF constraints
+        # 3. Update the CBF constraints for mulit obs
+        # if nearest_obs is None:
+        #     # deactivate the CBF constraints
+        #     self.A1.value = np.zeros_like(self.A1.value)
+        #     self.b1.value = np.zeros_like(self.b1.value)
+        # elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
+        #     h, dh_dx = self.robot.agent_barrier(nearest_obs)
+        #     self.A1.value[0,:] = dh_dx @ self.robot.g()
+        #     self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
+        # elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D']:
+        #     h, h_dot, dh_dot_dx = self.robot.agent_barrier(nearest_obs)
+        #     self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
+        #     self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
+
         for i in range(min(self.num_obs, len(obs_list))):
             obs = obs_list[i]
             if obs is None:
@@ -92,21 +105,25 @@ class CBFQP:
                 self.b1.value = np.zeros_like(self.b1.value)
             elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
                 h, dh_dx = self.robot.agent_barrier(obs)
-                self.A1.value[0,:] = dh_dx @ self.robot.g()
-                self.b1.value[0,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
+                self.A1.value[i,:] = dh_dx @ self.robot.g()
+                self.b1.value[i,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
             elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DoubleIntegrator2D', 'KinematicBicycle2D', 'Quad2D', 'Quad3D']:
                 h, h_dot, dh_dot_dx = self.robot.agent_barrier(obs)
-                self.A1.value[0,:] = dh_dot_dx @ self.robot.g()
-                self.b1.value[0,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
-        
-        self.u_ref.value = control_ref['u_ref']
-        # 4. Solve this yields a new 'self.u'
-        self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
-
-        print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
+                self.A1.value[i,:] = dh_dot_dx @ self.robot.g()
+                self.b1.value[i,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
             
+            solve_val = (self.A1.value[i, :] @ self.u.value + self.b1.value[i, :]
+                            if self.u.value is not None else 'N/A')
+            print(f"Obstacle {i}: h = {h}, solved constraint value: {solve_val}")
+            
+        self.u_ref.value = control_ref['u_ref']
+
+        self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
+        # print(f'h: {h} | value: {self.A1.value[0,:] @ self.u.value + self.b1.value[0,:]}')
+
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
+
         # if self.cbf_controller.status != 'optimal':
         #     raise QPError("CBF-QP optimization failed")
 
