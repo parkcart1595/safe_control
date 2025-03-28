@@ -23,7 +23,7 @@ class CBFQP:
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            self.cbf_param['alpha'] = 1.0
+            self.cbf_param['alpha'] = 1.5
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
