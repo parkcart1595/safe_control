@@ -615,16 +615,16 @@ def single_agent_main(control_type):
     #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 13.0, 0.6]])
 
     # Define linear mov obs
-    # known_obs = np.array([
-    #     [8.0, 4.0, 0.5],  # obstacle 1
-    #     [10.0, 10.0, 0.5],  # obstacle 2
-    #     [12.0, 2.0, 0.5],  # obstacle 3
-    #     [14.0, 11.0, 0.5],  # obstacle 4
-    #     [16.0, 3.0, 0.5],  # obstacle 5
-    # ])
-    known_obs = np.array([[20, 8.0, 0.5]])
+    known_obs = np.array([
+        [8.0, 4.0, 0.5],  # obstacle 1
+        [10.0, 8.0, 0.5],  # obstacle 2
+        [12.0, 2.0, 0.5],  # obstacle 3
+        [14.0, 11.0, 0.5],  # obstacle 4
+        [16.0, 5.0, 0.5],  # obstacle 5
+    ])
+    # known_obs = np.array([[20, 8.0, 0.5]])
     # known_obs = np.array([[4.0, 6.0, 0.8]])
-    known_obs[:, :2] += 0
+    known_obs[:, :2] += 2
 
     env_width = 25.0
     env_height = 15.0
@@ -679,7 +679,7 @@ def single_agent_main(control_type):
             if i % 2 == 1:
                 vx, vy = 0.0, -0.3
             else:
-                vx, vy = -0.3, 0.0
+                vx, vy = 0.0, 0.3
             y_min, y_max = 0.0, 12.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
