@@ -124,6 +124,8 @@ class CBFQP:
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
 
+        print(self.u.value)
+
         # if self.cbf_controller.status != 'optimal':
         #     raise QPError("CBF-QP optimization failed")
 

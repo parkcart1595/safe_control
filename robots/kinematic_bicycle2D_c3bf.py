@@ -93,9 +93,15 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         eps = 1e-6
         d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
 
+        # Compute obs_vel
+        obs_vel_vector = np.array([obs_vel_x, obs_vel_y])
+        obs_vel_mag = np.linalg.norm(obs_vel_vector)
+        obs_vel_dir = np.arctan2(obs_vel_y, obs_vel_x)
+        obs_vel = obs_vel_mag * np.sign(np.cos(obs_vel_dir))
+
+
         # Penalty term
-        # a, b = 0.01, 1.5
-        a, b = 1.0, 2/3
+        a, b = 0.1, 0.5
         # vel_pen = a * v_rel_mag
         slope_pen = a * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
         dist_pen = b * np.sqrt(d_safe)
@@ -117,6 +123,7 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         dh_dx[0, 1] = - a * p_rel_y / (v_rel_mag * np.sqrt(d_safe)) * (v_rel_new_y)**2 - b * p_rel_y / np.sqrt(d_safe)
         dh_dx[0, 2] = np.cos(rot_angle) * v * np.sin(theta) - np.sin(rot_angle) * v * np.cos(theta) - a * np.sqrt(d_safe) / v_rel_mag**3 * (v_rel_x * v * np.sin(theta) - v_rel_y * v * np.cos(theta)) * (v_rel_new_y)**2 + 2 * a * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * (-np.sin(rot_angle) * v * np.sin(theta) - np.cos(rot_angle) * v * np.cos(theta))
         dh_dx[0, 3] = -np.cos(rot_angle) * np.cos(theta) - np.sin(rot_angle) * np.sin(theta) - a * np.sqrt(d_safe) / v_rel_mag**3 * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) * v_rel_new_y**2 + 2 * a * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * (np.sin(rot_angle) * np.cos(theta) - np.cos(rot_angle) * np.sin(theta))
+        
         return h, dh_dx
 
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.0):

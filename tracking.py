@@ -604,7 +604,7 @@ def single_agent_main(control_type):
     #     [12, 2, 0]
     # ]
     waypoints = [
-         [5, 8, 0],
+         [6, 8, 0],
          [23, 8, 0],
     ]
     waypoints = np.array(waypoints)
