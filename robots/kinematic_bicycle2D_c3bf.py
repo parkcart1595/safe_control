@@ -89,8 +89,8 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         
         # Barrier function h(x)
         h = v_rel_new_x + lamda * (v_rel_new_y**2) + mu
-        print(f"v_rel_new_x: {v_rel_new_x} | lamda: {lamda} | mu: {mu} | rot_angle: {rot_angle}")
-        print(h)
+        # print(f"v_rel_new_x: {v_rel_new_x} | lamda: {lamda} | mu: {mu} | rot_angle: {rot_angle}")
+        # print(h)
         
         # Compute h (C3BF)
         dh_dx = np.zeros((1, 4))

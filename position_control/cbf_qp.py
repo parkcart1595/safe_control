@@ -2,7 +2,7 @@ import numpy as np
 import cvxpy as cp
 
 class CBFQP:
-    def __init__(self, robot, robot_spec, num_obs=5):
+    def __init__(self, robot, robot_spec, num_obs=10):
         self.robot = robot
         self.robot_spec = robot_spec
         self.num_obs = num_obs
@@ -112,9 +112,9 @@ class CBFQP:
                 self.A1.value[i,:] = dh_dot_dx @ self.robot.g()
                 self.b1.value[i,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
             
-            solve_val = (self.A1.value[i, :] @ self.u.value + self.b1.value[i, :]
-                            if self.u.value is not None else 'N/A')
-            print(f"Obstacle {i}: h = {h}, solved constraint value: {solve_val}")
+            # solve_val = (self.A1.value[i, :] @ self.u.value + self.b1.value[i, :]
+            #                 if self.u.value is not None else 'N/A')
+            # print(f"Obstacle {i}: h = {h}, solved constraint value: {solve_val}")
             
         self.u_ref.value = control_ref['u_ref']
 
@@ -124,7 +124,7 @@ class CBFQP:
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
 
-        print(self.u.value)
+        # print(self.u.value)
 
         # if self.cbf_controller.status != 'optimal':
         #     raise QPError("CBF-QP optimization failed")
