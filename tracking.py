@@ -489,14 +489,14 @@ class LocalTrackingController:
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-            self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
+            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
             # u = self.pos_controller.solve_control_problem(
             #     self.robot.X, control_ref, self.nearest_obs)
             # self.robot.draw_collision_quad(self.robot.X, [self.nearest_obs], self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-            self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
+            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         plt.figure(self.fig.number)
 
         # 7. Raise an error if the QP is infeasible, or the robot collides with the obstacle
@@ -892,7 +892,7 @@ def run_experiments(control_type, num_trials=100):
     dt = 0.05
     
     model = 'KinematicBicycle2D_C3BF'
-    waypoints = np.array([[3, 8, 0], [23, 8, 0]], dtype=np.float64)
+    waypoints = np.array([[4, 7, 0], [21, 7, 0]], dtype=np.float64)
     # known_obs = np.array([
     #     [8.0, 4.0, 0.5],
     #     [9.0, 9.0, 0.5],
@@ -915,37 +915,42 @@ def run_experiments(control_type, num_trials=100):
         # Generate random elements with a fixed seed
         np.random.seed(42+trial)
 
-        # Generate random static obstacles (e.g., 15 obstacles)
+        # Generate random dynamic obstacles
         num_obs = 15
-        obs_x = np.random.uniform(low=10, high=25, size=(num_obs, 1))
-        obs_y = np.random.uniform(low=1, high=14, size=(num_obs, 1))
-        obs_r = np.random.uniform(low=0.2, high=0.5, size=(num_obs, 1))
-        known_obs = np.hstack((obs_x, obs_y, obs_r))
-        known_obs[:, :2] += 0  # Apply offset as in the original code
+        obs_x = np.random.uniform(low=7, high=19, size=(num_obs, 1))
+        obs_y = np.random.uniform(low=2, high=11, size=(num_obs, 1))
+        obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
+        obs_vx = np.random.uniform(low=-0.3, high= -0.1, size=(num_obs, 1))
+        obs_vy = np.random.uniform(low= -0.2, high= 0.2, size=(num_obs, 1))
+        y_min_val, y_max_val = 2.0, 13.0
+        y_min = np.full((num_obs, 1), y_min_val)
+        y_max = np.full((num_obs, 1), y_max_val)
+        known_obs = np.hstack((obs_x, obs_y, obs_r, obs_vx, obs_vy, y_min, y_max))
+        known_obs[:, :2] += 0
 
         # Convert to dynamic obstacles (based on KinematicBicycle2D_C3BF)
-        dynamic_obs = []
-        for i, obs_info in enumerate(known_obs):
-            ox, oy, r = obs_info[:3]
-            if i % 2 == 1:
-                vx, vy = -0.2, -0.2
-            else:
-                vx, vy = -0.2, 0.2
-            y_min, y_max = 1.0, 14.0
-            dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
-        known_obs = np.array(dynamic_obs)
+        # dynamic_obs = []
+        # for i, obs_info in enumerate(known_obs):
+        #     ox, oy, r = obs_info[:3]
+        #     if i % 2 == 1:
+        #         vx, vy = -0.2, -0.2
+        #     else:
+        #         vx, vy = -0.2, 0.2
+        #     y_min, y_max = 2.0, 13.0
+        #     dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
+        # known_obs = np.array(dynamic_obs)
 
         # Initial state (based on the first waypoint)
         x_init = np.append(waypoints[0], 1.0)
         robot_spec = {
             'model': model,
-            'a_max': 0.8,
+            'a_max': 0.5,
             'sensor': 'rgbd',
             'radius': 0.5
         }
 
         env_width = 25.0
-        env_height = 15.0
+        env_height = 13.0
 
         # If known_obs does not have 7 columns, pad it
         if known_obs.shape[1] != 7:
@@ -960,7 +965,7 @@ def run_experiments(control_type, num_trials=100):
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=False,
+                                                    show_animation=True,
                                                     save_animation=False,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
@@ -1002,7 +1007,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    run_experiments('mpc_cbf', num_trials=100)
+    run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
