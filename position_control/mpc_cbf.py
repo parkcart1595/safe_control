@@ -65,7 +65,7 @@ class MPCCBF:
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            self.cbf_param['alpha'] = 1.0
+            self.cbf_param['alpha'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 0.15

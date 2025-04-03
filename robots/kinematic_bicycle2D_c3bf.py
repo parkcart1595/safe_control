@@ -147,7 +147,7 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
             p_rel_mag = ca.norm_2(p_rel)
             v_rel_mag = ca.norm_2(v_rel)
 
-            k_lamda, k_mu = 0.1, 0.4
+            k_lamda, k_mu = 0.1, 0.5
             # slope_pen = a * np.sqrt(p_rel_mag**2 - ego_dim**2) / (2*ego_dim*v_rel_mag)
             # dist_pen = b * np.sqrt(p_rel_mag**2 - ego_dim**2) * v_rel_mag / (2*ego_dim)
             lamda = k_lamda * np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag

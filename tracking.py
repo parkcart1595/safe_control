@@ -886,13 +886,124 @@ def multi_agent_main(control_type, save_animation=False):
     if save_animation:
         controller_0.export_video()
 
+def run_experiments(control_type, num_trials=100):
+    from utils import plotting, env
+    outcomes ={"reach_goal": 0, "collision": 0, "infeasible": 0}
+    dt = 0.05
+    
+    model = 'KinematicBicycle2D_C3BF'
+    waypoints = np.array([[3, 8, 0], [23, 8, 0]], dtype=np.float64)
+    # known_obs = np.array([
+    #     [8.0, 4.0, 0.5],
+    #     [9.0, 9.0, 0.5],
+    #     [10.0, 2.0, 0.5],
+    #     [11.0, 11.0, 0.5],
+    #     [12.0, 5.0, 0.5],
+    #     [13.0, 6.0, 0.5],
+    #     [14.0, 1.0, 0.5],
+    #     [15.0, 10.0, 0.5],
+    #     [16.0, 3.0, 0.5],
+    #     [17.0, 7.0, 0.5],
+    #     [18.0, 2.0, 0.5],
+    #     [19.0, 10.0, 0.5],
+    #     [20.0, 4.0, 0.5],
+    #     [21.0, 8.0, 0.5],
+    #     [22.0, 12.0, 0.5],
+    # ])
+
+    for trial in range(num_trials):
+        # Generate random elements with a fixed seed
+        np.random.seed(42+trial)
+
+        # Generate random static obstacles (e.g., 15 obstacles)
+        num_obs = 15
+        obs_x = np.random.uniform(low=10, high=25, size=(num_obs, 1))
+        obs_y = np.random.uniform(low=1, high=14, size=(num_obs, 1))
+        obs_r = np.random.uniform(low=0.2, high=0.5, size=(num_obs, 1))
+        known_obs = np.hstack((obs_x, obs_y, obs_r))
+        known_obs[:, :2] += 0  # Apply offset as in the original code
+
+        # Convert to dynamic obstacles (based on KinematicBicycle2D_C3BF)
+        dynamic_obs = []
+        for i, obs_info in enumerate(known_obs):
+            ox, oy, r = obs_info[:3]
+            if i % 2 == 1:
+                vx, vy = -0.2, -0.2
+            else:
+                vx, vy = -0.2, 0.2
+            y_min, y_max = 1.0, 14.0
+            dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
+        known_obs = np.array(dynamic_obs)
+
+        # Initial state (based on the first waypoint)
+        x_init = np.append(waypoints[0], 1.0)
+        robot_spec = {
+            'model': model,
+            'a_max': 0.8,
+            'sensor': 'rgbd',
+            'radius': 0.5
+        }
+
+        env_width = 25.0
+        env_height = 15.0
+
+        # If known_obs does not have 7 columns, pad it
+        if known_obs.shape[1] != 7:
+            known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2))))
+
+        # Create plotting and environment objects
+        plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
+        ax, fig = plot_handler.plot_grid("")
+        env_handler = env.Env()
+
+        # Create the controller (disable animation)
+        tracking_controller = LocalTrackingController(x_init, robot_spec,
+                                                    control_type=control_type,
+                                                    dt=dt,
+                                                    show_animation=False,
+                                                    save_animation=False,
+                                                    show_mpc_traj=False,
+                                                    ax=ax, fig=fig,
+                                                    env=env_handler)
+        tracking_controller.obs = known_obs
+        tracking_controller.set_waypoints(waypoints)
+
+        try:
+            ret = tracking_controller.run_all_steps(tf=100)
+            # ret == -1 indicates successful goal reach
+            if ret == -1:
+                outcomes["reach_goal"] += 1
+            else:
+                outcomes["infeasible"] += 1
+        except InfeasibleError as e:
+            if "Collision" in str(e):
+                outcomes["collision"] += 1
+            else:
+                outcomes["infeasible"] += 1
+        except Exception as e:
+            outcomes["collision"] += 1
+
+        plt.close(fig)  # Close the figure to manage memory
+
+    total = sum(outcomes.values())
+    percentages = {k: 100 * v / total for k, v in outcomes.items()}
+
+    plt.figure()
+    plt.bar(percentages.keys(), percentages.values())
+    plt.title(f"CBF Experiment Results ({num_trials} Trials, seed=42)")
+    plt.ylabel("Percentage (%)")
+    plt.grid(True)
+    plt.show()
+
+    print("Experiment Outcomes:", outcomes)
 
 if __name__ == "__main__":
     from utils import plotting
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    run_experiments('mpc_cbf', num_trials=100)
+    # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
