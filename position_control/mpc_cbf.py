@@ -29,7 +29,7 @@ class MPCCBF:
             self.R = np.array([0.5, 0.5])  # Input cost matrix
         elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
-            self.R = np.array([0.5, 50.0])  # Input cost matrix
+            self.R = np.array([0.5, 500.0])  # Input cost matrix
         elif self.robot_spec['model'] == 'Quad2D':
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
@@ -65,7 +65,7 @@ class MPCCBF:
             self.cbf_param['alpha2'] = 0.15
             self.n_states = 4
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            self.cbf_param['alpha'] = 0.2
+            self.cbf_param['alpha'] = 1.0
             self.n_states = 4
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 0.15

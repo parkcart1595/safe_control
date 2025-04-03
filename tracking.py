@@ -241,7 +241,7 @@ class LocalTrackingController:
         if self.robot_spec['model'] == 'Quad2D':
             angle_unpassed=np.pi*2
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
-            angle_unpassed=np.pi*1.2
+            angle_unpassed=np.pi*2
         
         if len(detected_obs) != 0:
             if len(self.obs) == 0:
@@ -341,16 +341,16 @@ class LocalTrackingController:
             self.dyn_obs_patch[i].center = ox, oy
             self.dyn_obs_patch[i].set_radius(r)
 
-        for i, obs_info in enumerate(self.init_obs_info):
-            ox, oy, r = obs_info[:3]
-            self.init_obs_circle[i].center = ox, oy
-            self.init_obs_circle[i].set_radius(r)
+        # for i, obs_info in enumerate(self.init_obs_info):
+        #     ox, oy, r = obs_info[:3]
+        #     self.init_obs_circle[i].center = ox, oy
+        #     self.init_obs_circle[i].set_radius(r)
 
     def is_collide_unknown(self):
         # if self.unknown_obs is None:
         #     return False
         robot_radius = self.robot.robot_radius
-        
+        print(self.robot.robot_radius)
         if self.unknown_obs is not None:
             for obs in self.unknown_obs:
                 # check if the robot collides with the obstacle
@@ -423,7 +423,7 @@ class LocalTrackingController:
                 self.dyn_obs_patch = [self.ax.add_patch(plt.Circle(
                     (0, 0), 0, edgecolor='black', facecolor='gray', fill=True)) for _ in range(len(self.obs))]
                 self.init_obs_info = self.obs.copy()
-                self.init_obs_circle = [self.ax.add_patch(plt.Circle((0, 0), 0, edgecolor='black', facecolor='none', linestyle='--')) for _ in self.init_obs_info]
+                # self.init_obs_circle = [self.ax.add_patch(plt.Circle((0, 0), 0, edgecolor='black', facecolor='none', linestyle='--')) for _ in self.init_obs_info]
             
             self.render_dyn_obs()
 
@@ -604,7 +604,7 @@ def single_agent_main(control_type):
     #     [12, 2, 0]
     # ]
     waypoints = [
-         [2, 8, 0],
+         [3, 8, 0],
          [23, 8, 0],
     ]
     waypoints = np.array(waypoints)
@@ -636,13 +636,17 @@ def single_agent_main(control_type):
         [15.0, 10.0, 0.5],  # obstacle 8
         [16.0, 3.0, 0.5],  # obstacle 9
         [17.0, 7.0, 0.5],  # obstacle 10
-        [18.0, 9.0, 0.5],  # obstacle 11
+        [18.0, 2.0, 0.5],  # obstacle 11
+        [19.0, 10.0, 0.5],  # obstacle 12
+        [20.0, 4.0, 0.5],  # obstacle 13
+        [21.0, 8.0, 0.5],  # obstacle 14
+        [22.0, 12.0, 0.5],  # obstacle 15
     ])
 
 
     # known_obs = np.array([[20, 8.0, 0.5]])
     # known_obs = np.array([[4.0, 6.0, 0.8]])
-    known_obs[:, :2] += 0
+    known_obs[:, :2] += 2
 
     env_width = 25.0
     env_height = 15.0
@@ -677,17 +681,18 @@ def single_agent_main(control_type):
         dynamic_obs = []  
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
-            if i % 2 == 0:
-                vx, vy = 0.3, 0.3
+            if i % 2 == 1:
+                vx, vy = -0.2, -0.2
             else:
-                vx, vy = -0.3, 0.3
-            dynamic_obs.append([ox, oy, r, vx, vy])
+                vx, vy = -0.2, 0.0
+            y_min, y_max = 0.0, 12.0
+            dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
 
     elif model == 'KinematicBicycle2D_C3BF':
         robot_spec = {
             'model': 'KinematicBicycle2D_C3BF',
-            'a_max': 0.5,
+            'a_max': 0.8,
             'sensor': 'rgbd',
             'radius': 0.5
         }
@@ -697,7 +702,7 @@ def single_agent_main(control_type):
             if i % 2 == 1:
                 vx, vy = -0.2, -0.2
             else:
-                vx, vy = -0.2, 0.2
+                vx, vy = -0.2, 0.0
             y_min, y_max = 0.0, 12.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
@@ -887,7 +892,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('cbf_qp')
+    single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')

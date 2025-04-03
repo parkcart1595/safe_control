@@ -54,7 +54,7 @@ class KinematicBicycle2D:
         if 'a_max' not in self.robot_spec:
             self.robot_spec['a_max'] = 0.8
         if 'delta_max' not in self.robot_spec:
-            self.robot_spec['delta_max'] = np.deg2rad(20)
+            self.robot_spec['delta_max'] = np.deg2rad(30)
         if 'beta_max' not in self.robot_spec:
             self.robot_spec['beta_max'] = self.beta(self.robot_spec['delta_max'])
 
@@ -175,7 +175,7 @@ class KinematicBicycle2D:
         x_k1 = self.step(x_k, u_k, casadi=True)
         x_k2 = self.step(x_k1, u_k, casadi=True)
 
-        def h(x, obs, robot_radius, beta=1.1):
+        def h(x, obs, robot_radius, beta=1.5):
             '''Computes CBF h(x) = ||x-x_obs||^2 - beta*d_min^2'''
             x_obs = obs[0]
             y_obs = obs[1]
