@@ -119,7 +119,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 10 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -917,12 +917,12 @@ def run_experiments(control_type, num_trials=100):
 
         # Generate random dynamic obstacles
         num_obs = 15
-        obs_x = np.random.uniform(low=7, high=19, size=(num_obs, 1))
-        obs_y = np.random.uniform(low=2, high=11, size=(num_obs, 1))
+        obs_x = np.random.uniform(low=8, high=20, size=(num_obs, 1))
+        obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
         obs_vx = np.random.uniform(low=-0.3, high= -0.1, size=(num_obs, 1))
         obs_vy = np.random.uniform(low= -0.2, high= 0.2, size=(num_obs, 1))
-        y_min_val, y_max_val = 2.0, 13.0
+        y_min_val, y_max_val = 2.0, 12.0
         y_min = np.full((num_obs, 1), y_min_val)
         y_max = np.full((num_obs, 1), y_max_val)
         known_obs = np.hstack((obs_x, obs_y, obs_r, obs_vx, obs_vy, y_min, y_max))
@@ -965,7 +965,7 @@ def run_experiments(control_type, num_trials=100):
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=True,
+                                                    show_animation=False,
                                                     save_animation=False,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
