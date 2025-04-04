@@ -82,7 +82,7 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         obs_vel = obs_vel_mag * np.sign(np.cos(obs_vel_dir))
 
         # Penalty term
-        k_lamda, k_mu = 0.1, 0.5
+        k_lamda, k_mu = 0.5, 0.5
         # vel_pen = a * v_rel_mag
         lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
         mu = k_mu * np.sqrt(d_safe)

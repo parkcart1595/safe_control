@@ -916,7 +916,7 @@ def run_experiments(control_type, num_trials=100):
         np.random.seed(42+trial)
 
         # Generate random dynamic obstacles
-        num_obs = 15
+        num_obs = 25
         obs_x = np.random.uniform(low=8, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
