@@ -72,6 +72,7 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         v_rel_new_mag = np.linalg.norm(v_rel_new)
 
         # Compute d_safe safely
+        # eps = 1e-6
         eps = 1e-6
         d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
 
@@ -103,12 +104,11 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         return h, dh_dx
 
     def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.0):
-        '''Discrete Time C3BF'''
+        '''Discrete Time Q3BF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
 
         def h(x, obs, robot_radius, beta=1.0):
-            '''Computes C3BF h(x) = <p_rel, v_rel> + ||p_rel||*||v_rel||*cos(phi)'''
             theta = x[2, 0]
             v = x[3, 0]
 
@@ -136,10 +136,6 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
                 ca.horzcat(ca.cos(rot_angle), ca.sin(rot_angle)),
                 ca.horzcat(-ca.sin(rot_angle), ca.cos(rot_angle))
             )
-            # R = ca.vertcat( 
-            #     ca.horzcat(ca.cos(rot_angle), ca.sin(rot_angle)),
-            #     ca.horzcat(-ca.sin(rot_angle), ca.cos(rot_angle))
-            # )
 
             # Transform v_rel into the new coordinate frame
             v_rel_new = ca.mtimes(R, v_rel)
@@ -148,22 +144,12 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
             v_rel_mag = ca.norm_2(v_rel)
 
             k_lamda, k_mu = 0.1, 0.5
-            # slope_pen = a * np.sqrt(p_rel_mag**2 - ego_dim**2) / (2*ego_dim*v_rel_mag)
-            # dist_pen = b * np.sqrt(p_rel_mag**2 - ego_dim**2) * v_rel_mag / (2*ego_dim)
+
             lamda = k_lamda * np.sqrt(p_rel_mag**2 - ego_dim**2) / v_rel_mag
             mu = k_mu * np.sqrt(p_rel_mag**2 - ego_dim**2)
-            # vel_pen = a * v_rel_mag
 
             # Compute h
             h = v_rel_new[0] + lamda * v_rel_new[1]**2 + mu
-
-            # a, b = 0.3, 1.0
-            #  # vel_pen = a * v_rel_mag
-            # vel_pen = a * p_rel_mag * np.sqrt(p_rel_mag**2 - ego_dim**2) / (2*ego_dim)
-            # dist_pen = b * np.sqrt(p_rel_mag**2 - ego_dim**2) / (2*ego_dim*p_rel_mag)
-
-            # # Compute h
-            # h = v_rel_new[1] - (-vel_pen * (v_rel_new[0])**2 - dist_pen)
 
             return h
 

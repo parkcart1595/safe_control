@@ -490,7 +490,7 @@ class BaseRobot:
 
             # Penalty term
             # a, b = 0.01, 1.5
-            a, b = 0.1, 0.5
+            a, b = 0.5, 0.5
             slope_pen = a * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
             dist_pen = b * np.sqrt(d_safe)
 
@@ -501,7 +501,7 @@ class BaseRobot:
             R = np.array([[np.cos(rot_angle), np.sin(rot_angle)],
                         [-np.sin(rot_angle),  np.cos(rot_angle)]])
             
-            L = 2.0
+            L = 1.5
             y_new = np.linspace(-L, L, 200)
             x_new = -slope_pen * (y_new**2) - dist_pen
             # print(f"vel_pen: {vel_pen} | dist_pen: {dist_pen}")

@@ -17,7 +17,7 @@ The main functions demonstrate single and multi-agent scenarios, showcasing the 
 
 @required-scripts: robots/robot.py
 """
-
+np.random.seed(42)
 
 class InfeasibleError(Exception):
     '''
@@ -32,11 +32,12 @@ class InfeasibleError(Exception):
 
 class LocalTrackingController:
     def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
-                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=True, ax=None, fig=None, env=None):
+                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=True, ax=None, fig=None, env=None,trial_folder=None):
 
         self.robot_spec = robot_spec
         self.control_type = control_type  # 'cbf_qp' or 'mpc_cbf'
         self.dt = dt
+        self.trial_folder = trial_folder
 
         self.state_machine = 'idle'  # Can be 'idle', 'track', 'stop', 'rotate'
         self.rotation_threshold = 0.1  # Radians
@@ -139,9 +140,20 @@ class LocalTrackingController:
         self.goal = None
 
     def setup_animation_saving(self):
-        self.current_directory_path = os.getcwd()
-        if not os.path.exists(self.current_directory_path + "/output/animations"):
-            os.makedirs(self.current_directory_path + "/output/animations")
+        # self.current_directory_path = os.getcwd()
+        # if not os.path.exists(self.current_directory_path + "/output/animations"):
+        #     os.makedirs(self.current_directory_path + "/output/animations")
+        # self.save_per_frame = 2
+        # self.ani_idx = 0
+        if self.trial_folder is None:
+            self.current_directory_path = os.getcwd()
+            folder = os.path.join(self.current_directory_path, "output", "animations")
+        else:
+            folder = self.trial_folder
+
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        self.save_folder = folder  # 실제 저장에 사용할 폴더
         self.save_per_frame = 2
         self.ani_idx = 0
 
@@ -433,8 +445,8 @@ class LocalTrackingController:
             if self.save_animation:
                 self.ani_idx += 1
                 if force_save or self.ani_idx % self.save_per_frame == 0:
-                    plt.savefig(self.current_directory_path +
-                                "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png")
+                    plt.savefig(os.path.join(self.save_folder, "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png"))
+
 
     def control_step(self):
         '''
@@ -541,16 +553,25 @@ class LocalTrackingController:
 
     def export_video(self):
         # convert the image sequence to a video
+        # if self.show_animation and self.save_animation:
+        #     subprocess.call(['ffmpeg',
+        #                      '-framerate', '30',  # Input framerate (adjust if needed)
+        #                      '-i', self.current_directory_path + "/output/animations/t_step_%04d.png",
+        #                      '-vf', 'scale=1920:982,fps=60',  # Ensure height is divisible by 2 and set output framerate
+        #                      '-pix_fmt', 'yuv420p',
+        #                      self.current_directory_path + "/output/animations/tracking.mp4"])
+
+        #     for file_name in glob.glob(self.current_directory_path +
+        #                                "/output/animations/*.png"):
+        #         os.remove(file_name)
         if self.show_animation and self.save_animation:
             subprocess.call(['ffmpeg',
-                             '-framerate', '30',  # Input framerate (adjust if needed)
-                             '-i', self.current_directory_path + "/output/animations/t_step_%04d.png",
-                             '-vf', 'scale=1920:982,fps=60',  # Ensure height is divisible by 2 and set output framerate
+                             '-framerate', '30',  # Input framerate (조정 가능)
+                             '-i', os.path.join(self.save_folder, "t_step_%04d.png"),
+                             '-vf', 'scale=1920:982,fps=60',  # 출력 영상 설정
                              '-pix_fmt', 'yuv420p',
-                             self.current_directory_path + "/output/animations/tracking.mp4"])
-
-            for file_name in glob.glob(self.current_directory_path +
-                                       "/output/animations/*.png"):
+                             os.path.join(self.save_folder, "tracking.mp4")])
+            for file_name in glob.glob(os.path.join(self.save_folder, "*.png")):
                 os.remove(file_name)
 
     # # If the 'upper' function is not compatible with your device, please use the function provided below
@@ -597,23 +618,22 @@ def single_agent_main(control_type):
     dt = 0.05
     model = 'KinematicBicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
-    # waypoints = [
-    #     [2, 2, math.pi/2],
-    #     [2, 12, 0],
-    #     [12, 12, 0],
-    #     [12, 2, 0]
-    # ]
     waypoints = [
-         [3, 8, 0],
-         [23, 8, 0],
+        [2, 2, math.pi/2],
+        [2, 12, 0],
+        [12, 12, 0],
+        [12, 2, 0]
     ]
+    # waypoints = [
+    #      [3, 8, 0],
+    #      [23, 8, 0],
+    # ]
     waypoints = np.array(waypoints)
-    # waypoints[:, :2] += 2
+    waypoints[:, :2] += 3
     # # Define static obs
-    # known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 9.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
-    #                     [10.0, 7.3, 0.4],
-    #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 13.0, 0.6]])
-
+    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.0],
+                        [10.0, 7.3, 0.4],
+                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
     # Define linear mov obs
     # Case 1
     # known_obs = np.array([
@@ -625,31 +645,33 @@ def single_agent_main(control_type):
     # ])
 
     # Case 2
-    known_obs = np.array([
-        [8.0, 4.0, 0.5],  # obstacle 1
-        [9.0, 9.0, 0.5],  # obstacle 2
-        [10.0, 2.0, 0.5],  # obstacle 3
-        [11.0, 11.0, 0.5],  # obstacle 4
-        [12.0, 5.0, 0.5],  # obstacle 5
-        [13.0, 6.0, 0.5],  # obstacle 6
-        [14.0, 1.0, 0.5],  # obstacle 7
-        [15.0, 10.0, 0.5],  # obstacle 8
-        [16.0, 3.0, 0.5],  # obstacle 9
-        [17.0, 7.0, 0.5],  # obstacle 10
-        [18.0, 2.0, 0.5],  # obstacle 11
-        [19.0, 10.0, 0.5],  # obstacle 12
-        [20.0, 4.0, 0.5],  # obstacle 13
-        [21.0, 8.0, 0.5],  # obstacle 14
-        [22.0, 12.0, 0.5],  # obstacle 15
-    ])
+    # known_obs = np.array([
+    #     [8.0, 4.0, 0.5],  # obstacle 1
+    #     [9.0, 9.0, 0.5],  # obstacle 2
+    #     [10.0, 2.0, 0.5],  # obstacle 3
+    #     [11.0, 11.0, 0.5],  # obstacle 4
+    #     [12.0, 5.0, 0.5],  # obstacle 5
+    #     [13.0, 6.0, 0.5],  # obstacle 6
+    #     [14.0, 1.0, 0.5],  # obstacle 7
+    #     [15.0, 10.0, 0.5],  # obstacle 8
+    #     [16.0, 3.0, 0.5],  # obstacle 9
+    #     [17.0, 7.0, 0.5],  # obstacle 10
+    #     [18.0, 2.0, 0.5],  # obstacle 11
+    #     [19.0, 10.0, 0.5],  # obstacle 12
+    #     [20.0, 4.0, 0.5],  # obstacle 13
+    #     [21.0, 8.0, 0.5],  # obstacle 14
+    #     [22.0, 12.0, 0.5],  # obstacle 15
+    # ])
 
 
     # known_obs = np.array([[20, 8.0, 0.5]])
     # known_obs = np.array([[4.0, 6.0, 0.8]])
-    known_obs[:, :2] += 2
+    known_obs[:, :2] += 3
 
-    env_width = 25.0
-    env_height = 15.0
+    env_width = 20.0
+    env_height = 20.0
+    # env_width = 25.0
+    # env_height = 15.0
     if model == 'SingleIntegrator2D':
         robot_spec = {
             'model': 'SingleIntegrator2D',
@@ -682,9 +704,9 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 1:
-                vx, vy = -0.2, -0.2
+                vx, vy = 0.2, -0.2
             else:
-                vx, vy = -0.2, 0.0
+                vx, vy = -0.2, 0.2
             y_min, y_max = 0.0, 12.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
@@ -692,7 +714,7 @@ def single_agent_main(control_type):
     elif model == 'KinematicBicycle2D_C3BF':
         robot_spec = {
             'model': 'KinematicBicycle2D_C3BF',
-            'a_max': 0.8,
+            'a_max': 0.5,
             'sensor': 'rgbd',
             'radius': 0.5
         }
@@ -702,8 +724,8 @@ def single_agent_main(control_type):
             if i % 2 == 1:
                 vx, vy = -0.2, -0.2
             else:
-                vx, vy = -0.2, 0.0
-            y_min, y_max = 0.0, 12.0
+                vx, vy = 0.2, 0.2
+            y_min, y_max = 0.0, 20.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
         print(known_obs)
@@ -886,59 +908,28 @@ def multi_agent_main(control_type, save_animation=False):
     if save_animation:
         controller_0.export_video()
 
-def run_experiments(control_type, num_trials=100):
+def run_experiments(control_type, num_trials=5):
     from utils import plotting, env
     outcomes ={"reach_goal": 0, "collision": 0, "infeasible": 0}
     dt = 0.05
     
     model = 'KinematicBicycle2D_C3BF'
     waypoints = np.array([[4, 7, 0], [21, 7, 0]], dtype=np.float64)
-    # known_obs = np.array([
-    #     [8.0, 4.0, 0.5],
-    #     [9.0, 9.0, 0.5],
-    #     [10.0, 2.0, 0.5],
-    #     [11.0, 11.0, 0.5],
-    #     [12.0, 5.0, 0.5],
-    #     [13.0, 6.0, 0.5],
-    #     [14.0, 1.0, 0.5],
-    #     [15.0, 10.0, 0.5],
-    #     [16.0, 3.0, 0.5],
-    #     [17.0, 7.0, 0.5],
-    #     [18.0, 2.0, 0.5],
-    #     [19.0, 10.0, 0.5],
-    #     [20.0, 4.0, 0.5],
-    #     [21.0, 8.0, 0.5],
-    #     [22.0, 12.0, 0.5],
-    # ])
 
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
-        np.random.seed(42+trial)
-
         # Generate random dynamic obstacles
-        num_obs = 25
+        num_obs = 15
         obs_x = np.random.uniform(low=8, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
-        obs_vx = np.random.uniform(low=-0.3, high= -0.1, size=(num_obs, 1))
+        obs_vx = np.random.uniform(low=-0.2, high= -0.2, size=(num_obs, 1))
         obs_vy = np.random.uniform(low= -0.2, high= 0.2, size=(num_obs, 1))
         y_min_val, y_max_val = 2.0, 12.0
         y_min = np.full((num_obs, 1), y_min_val)
         y_max = np.full((num_obs, 1), y_max_val)
         known_obs = np.hstack((obs_x, obs_y, obs_r, obs_vx, obs_vy, y_min, y_max))
         known_obs[:, :2] += 0
-
-        # Convert to dynamic obstacles (based on KinematicBicycle2D_C3BF)
-        # dynamic_obs = []
-        # for i, obs_info in enumerate(known_obs):
-        #     ox, oy, r = obs_info[:3]
-        #     if i % 2 == 1:
-        #         vx, vy = -0.2, -0.2
-        #     else:
-        #         vx, vy = -0.2, 0.2
-        #     y_min, y_max = 2.0, 13.0
-        #     dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
-        # known_obs = np.array(dynamic_obs)
 
         # Initial state (based on the first waypoint)
         x_init = np.append(waypoints[0], 1.0)
@@ -961,15 +952,16 @@ def run_experiments(control_type, num_trials=100):
         ax, fig = plot_handler.plot_grid("")
         env_handler = env.Env()
 
+        trial_folder = os.path.join(os.getcwd(), "output", "animations", f"trial_{trial+1}")
         # Create the controller (disable animation)
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=False,
-                                                    save_animation=False,
+                                                    show_animation=True,
+                                                    save_animation=True,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
-                                                    env=env_handler)
+                                                    env=env_handler,trial_folder=trial_folder)
         tracking_controller.obs = known_obs
         tracking_controller.set_waypoints(waypoints)
 
@@ -988,6 +980,7 @@ def run_experiments(control_type, num_trials=100):
         except Exception as e:
             outcomes["collision"] += 1
 
+        # tracking_controller.export_video()
         plt.close(fig)  # Close the figure to manage memory
 
     total = sum(outcomes.values())
