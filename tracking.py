@@ -624,52 +624,69 @@ def single_agent_main(control_type):
         [12, 12, 0],
         [12, 2, 0]
     ]
+
+    # Define static obs
+    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 1.0], [4.0, 3.5, 1.5],
+                        [9.0, 6.5, 0.4],
+                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+
+    env_width = 14.0
+    env_height = 14.0
+    # dt = 0.05
+    # model = 'KinematicBicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+
     # waypoints = [
-    #      [15, 8, 0],
-    #      [24, 8, 0],
+    #     [2, 2, math.pi/2],
+    #     [2, 12, 0],
+    #     [12, 12, 0],
+    #     [12, 2, 0]
     # ]
-    waypoints = np.array(waypoints)
-    waypoints[:, :2] += 2
-    # # Define static obs
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.3], [4.0, 8.0, 0.3], [1.5, 10.0, 0.5], [9.0, 9.0, 0.5], [9.0, 4.5, 1.0], [4.0, 3.5, 0.7],
-                        [10.0, 6.5, 0.4],
-                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [9.5, 10.5, 0.6]])
-    # Define linear mov obs
-    # Case 1
-    # known_obs = np.array([
-    #     [8.0, 4.0, 0.5],  # obstacle 1
-    #     [10.0, 8.0, 0.5],  # obstacle 2
-    #     [12.0, 2.0, 0.5],  # obstacle 3
-    #     [14.0, 11.0, 0.5],  # obstacle 4
-    #     [16.0, 5.0, 0.5],  # obstacle 5
-    # ])
+    # # waypoints = [
+    # #      [15, 8, 0],
+    # #      [24, 8, 0],
+    # # ]
+    # waypoints = np.array(waypoints)
+    # waypoints[:, :2] += 2
+    # # # Define static obs
+    # known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.3], [4.0, 8.0, 0.3], [1.5, 10.0, 0.5], [9.0, 9.0, 0.5], [9.0, 4.5, 1.0], [4.0, 3.5, 0.7],
+    #                     [10.0, 6.5, 0.4],
+    #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [9.5, 10.5, 0.6]])
+    # # Define linear mov obs
+    # # Case 1
+    # # known_obs = np.array([
+    # #     [8.0, 4.0, 0.5],  # obstacle 1
+    # #     [10.0, 8.0, 0.5],  # obstacle 2
+    # #     [12.0, 2.0, 0.5],  # obstacle 3
+    # #     [14.0, 11.0, 0.5],  # obstacle 4
+    # #     [16.0, 5.0, 0.5],  # obstacle 5
+    # # ])
 
-    # Case 2
-    # known_obs = np.array([
-    #     [8.0, 4.0, 0.5],  # obstacle 1
-    #     [9.0, 9.0, 0.5],  # obstacle 2
-    #     [10.0, 2.0, 0.5],  # obstacle 3
-    #     [11.0, 11.0, 0.5],  # obstacle 4
-    #     [12.0, 5.0, 0.5],  # obstacle 5
-    #     [13.0, 6.0, 0.5],  # obstacle 6
-    #     [14.0, 1.0, 0.5],  # obstacle 7
-    #     [15.0, 10.0, 0.5],  # obstacle 8
-    #     [16.0, 3.0, 0.5],  # obstacle 9
-    #     [17.0, 7.0, 0.5],  # obstacle 10
-    #     [18.0, 2.0, 0.5],  # obstacle 11
-    #     [19.0, 10.0, 0.5],  # obstacle 12
-    #     [20.0, 4.0, 0.5],  # obstacle 13
-    #     [21.0, 8.0, 0.5],  # obstacle 14
-    #     [22.0, 12.0, 0.5],  # obstacle 15
-    # ])
+    # # Case 2
+    # # known_obs = np.array([
+    # #     [8.0, 4.0, 0.5],  # obstacle 1
+    # #     [9.0, 9.0, 0.5],  # obstacle 2
+    # #     [10.0, 2.0, 0.5],  # obstacle 3
+    # #     [11.0, 11.0, 0.5],  # obstacle 4
+    # #     [12.0, 5.0, 0.5],  # obstacle 5
+    # #     [13.0, 6.0, 0.5],  # obstacle 6
+    # #     [14.0, 1.0, 0.5],  # obstacle 7
+    # #     [15.0, 10.0, 0.5],  # obstacle 8
+    # #     [16.0, 3.0, 0.5],  # obstacle 9
+    # #     [17.0, 7.0, 0.5],  # obstacle 10
+    # #     [18.0, 2.0, 0.5],  # obstacle 11
+    # #     [19.0, 10.0, 0.5],  # obstacle 12
+    # #     [20.0, 4.0, 0.5],  # obstacle 13
+    # #     [21.0, 8.0, 0.5],  # obstacle 14
+    # #     [22.0, 12.0, 0.5],  # obstacle 15
+    # # ])
 
 
-    # known_obs = np.array([[20, 9.5, 0.5]])
-    # known_obs = np.array([[4.0, 6.0, 0.8]])
-    known_obs[:, :2] += 2
+    # # known_obs = np.array([[20, 9.5, 0.5]])
+    # # known_obs = np.array([[4.0, 6.0, 0.8]])
+    # known_obs[:, :2] += 2
 
-    env_width = 18.0
-    env_height = 18.0
+    # env_width = 18.0
+    # env_height = 18.0
     # env_width = 25.0
     # env_height = 15.0
     if model == 'SingleIntegrator2D':
