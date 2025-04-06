@@ -617,55 +617,14 @@ def single_agent_main(control_type):
         [12, 12, 0],
         [12, 2, 0]
     ]
-    # waypoints = [
-    #      [3, 8, 0],
-    #      [23, 8, 0],
-    # ]
-    waypoints = np.array(waypoints)
-    # waypoints[:, :2] += 2
-    # # Define static obs
+
     # Define static obs
     known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.5],
                         [10.0, 7.3, 0.4],
                         [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
-    # Define linear mov obs
-    # Case 1
-    # known_obs = np.array([
-    #     [8.0, 4.0, 0.5],  # obstacle 1
-    #     [10.0, 8.0, 0.5],  # obstacle 2
-    #     [12.0, 2.0, 0.5],  # obstacle 3
-    #     [14.0, 11.0, 0.5],  # obstacle 4
-    #     [16.0, 5.0, 0.5],  # obstacle 5
-    # ])
-
-    # Case 2
-    # known_obs = np.array([
-    #     [8.0, 4.0, 0.5],  # obstacle 1
-    #     [9.0, 9.0, 0.5],  # obstacle 2
-    #     [10.0, 2.0, 0.5],  # obstacle 3
-    #     [11.0, 11.0, 0.5],  # obstacle 4
-    #     [12.0, 5.0, 0.5],  # obstacle 5
-    #     [13.0, 6.0, 0.5],  # obstacle 6
-    #     [14.0, 1.0, 0.5],  # obstacle 7
-    #     [15.0, 10.0, 0.5],  # obstacle 8
-    #     [16.0, 3.0, 0.5],  # obstacle 9
-    #     [17.0, 7.0, 0.5],  # obstacle 10
-    #     [18.0, 2.0, 0.5],  # obstacle 11
-    #     [19.0, 10.0, 0.5],  # obstacle 12
-    #     [20.0, 4.0, 0.5],  # obstacle 13
-    #     [21.0, 8.0, 0.5],  # obstacle 14
-    #     [22.0, 12.0, 0.5],  # obstacle 15
-    # ])
-
-
-    # known_obs = np.array([[20, 8.0, 0.5]])
-    # known_obs = np.array([[4.0, 6.0, 0.8]])
-    known_obs[:, :2] += 0
 
     env_width = 14.0
     env_height = 14.0
-    # env_width = 25.0
-    # env_height = 15.0
     if model == 'SingleIntegrator2D':
         robot_spec = {
             'model': 'SingleIntegrator2D',
@@ -698,10 +657,10 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 1:
-                vx, vy = 0.2, -0.2
-            else:
                 vx, vy = -0.2, 0.2
-            # y_min, y_max = 0.0, 12.0
+            else:
+                vx, vy = -0.2, -0.2
+            y_min, y_max = 0.0, 12.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
 
@@ -718,8 +677,8 @@ def single_agent_main(control_type):
             if i % 2 == 1:
                 vx, vy = -0.2, -0.2
             else:
-                vx, vy = -0.2, 0.0
-            y_min, y_max = 0.0, 12.0
+                vx, vy = 0.2, 0.2
+            y_min, y_max = 0.0, 18.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
         print(known_obs)
@@ -816,7 +775,7 @@ def single_agent_main(control_type):
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=True,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
@@ -826,6 +785,7 @@ def single_agent_main(control_type):
     # tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
     unexpected_beh = tracking_controller.run_all_steps(tf=100)
+
 
 def multi_agent_main(control_type, save_animation=False):
     dt = 0.05
@@ -995,9 +955,9 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    run_experiments('cbf_qp', num_trials=100)
+    # run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
-    # single_agent_main('cbf_qp')
+    single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')

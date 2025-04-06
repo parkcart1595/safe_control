@@ -136,6 +136,7 @@ class BaseRobot:
 
         self.collision_cone_patches = []
         self.collision_cone_patch = None
+        self.rel_vel_patches = []
 
         # Plot handles
         self.vis_orient_len = 0.5
@@ -444,10 +445,18 @@ class BaseRobot:
         if not hasattr(self, 'collision_cone_patches'):
             self.collision_cone_patches = [] # Initialize attribute
 
+         # Remove previous relative vel safely
+        if not hasattr(self, 'rel_vel_patches'):
+            self.rel_vel_patches = []
+
         for patch in list(self.collision_cone_patches):
             if patch in ax.patches:
                 patch.remove()
         self.collision_cone_patches.clear()
+
+        for arrow in self.rel_vel_patches:
+                arrow.remove()
+        self.rel_vel_patches.clear()
 
         # Robot and obstacle positions
         robot_pos = self.get_position()
@@ -497,17 +506,29 @@ class BaseRobot:
             ax.add_patch(collision_cone_patch)
             self.collision_cone_patches.append(collision_cone_patch)
 
-        # Plot the relative velocity vector for nearest obs
-        v_rel_start = robot_pos
+            # Plot the relative velocity vector for nearest obs
+            # v_rel_start = robot_pos
 
-        if hasattr(self, 'v_rel_arrow') and self.v_rel_arrow is not None: # Remove previous velocity vector if exists
-            self.v_rel_arrow.remove()
+            # if hasattr(self, 'v_rel_arrow') and self.v_rel_arrow is not None: # Remove previous velocity vector if exists
+            #     self.v_rel_arrow.remove()
 
-        self.v_rel_arrow = ax.arrow(
-            v_rel_start[0], v_rel_start[1],
-            v_rel[0, 0], v_rel[1, 0],
-            color = 'red', width = 0.02, label = 'Relative Velocity'
-        )
+
+            # self.v_rel_arrow = ax.arrow(
+            #     v_rel_start[0], v_rel_start[1],
+            #     v_rel[0, 0], v_rel[1, 0],
+            #     color = 'red', width = 0.02, label = 'Relative Velocity'
+            # )
+            offset_angle = 0.003 * (i - (len(obs_list)//2))
+            R_offset = np.array([
+                [np.cos(offset_angle), -np.sin(offset_angle)],
+                [np.sin(offset_angle),  np.cos(offset_angle)]
+            ])
+            v_rel_offset = R_offset @ v_rel
+
+            arrow = ax.arrow(float(robot_pos[0]), float(robot_pos[1]),
+                            float(v_rel_offset[0]), float(v_rel_offset[1]),
+                            color=colors[i], width=0.01, alpha=1.0)
+            self.rel_vel_patches.append(arrow)
 
     def process_sensing_footprints_visualization(self):
         '''
