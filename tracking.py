@@ -120,7 +120,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 10 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -243,7 +243,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=10):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -625,15 +625,15 @@ def single_agent_main(control_type):
         [12, 2, 0]
     ]
     # waypoints = [
-    #      [3, 8, 0],
-    #      [23, 8, 0],
+    #      [15, 8, 0],
+    #      [24, 8, 0],
     # ]
     waypoints = np.array(waypoints)
-    waypoints[:, :2] += 3
+    waypoints[:, :2] += 2
     # # Define static obs
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 3.0], [4.0, 3.5, 1.0],
-                        [10.0, 7.3, 0.4],
-                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.3], [4.0, 8.0, 0.3], [1.5, 10.0, 0.5], [9.0, 9.0, 0.5], [9.0, 4.5, 1.0], [4.0, 3.5, 0.7],
+                        [10.0, 6.5, 0.4],
+                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [9.5, 10.5, 0.6]])
     # Define linear mov obs
     # Case 1
     # known_obs = np.array([
@@ -664,12 +664,12 @@ def single_agent_main(control_type):
     # ])
 
 
-    # known_obs = np.array([[20, 8.0, 0.5]])
+    # known_obs = np.array([[20, 9.5, 0.5]])
     # known_obs = np.array([[4.0, 6.0, 0.8]])
-    known_obs[:, :2] += 3
+    known_obs[:, :2] += 2
 
-    env_width = 20.0
-    env_height = 20.0
+    env_width = 18.0
+    env_height = 18.0
     # env_width = 25.0
     # env_height = 15.0
     if model == 'SingleIntegrator2D':
@@ -704,9 +704,9 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 1:
-                vx, vy = 0.2, -0.2
-            else:
                 vx, vy = -0.2, 0.2
+            else:
+                vx, vy = -0.2, -0.2
             y_min, y_max = 0.0, 12.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
@@ -721,11 +721,11 @@ def single_agent_main(control_type):
         dynamic_obs = []  
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
-            if i % 2 == 1:
+            if i % 2 == 0:
                 vx, vy = -0.2, -0.2
             else:
                 vx, vy = 0.2, 0.2
-            y_min, y_max = 0.0, 20.0
+            y_min, y_max = 0.0, 18.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
         print(known_obs)
@@ -822,7 +822,7 @@ def single_agent_main(control_type):
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=True,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
@@ -908,7 +908,7 @@ def multi_agent_main(control_type, save_animation=False):
     if save_animation:
         controller_0.export_video()
 
-def run_experiments(control_type, num_trials=5):
+def run_experiments(control_type, num_trials=100):
     from utils import plotting, env
     outcomes ={"reach_goal": 0, "collision": 0, "infeasible": 0}
     dt = 0.05
@@ -919,7 +919,7 @@ def run_experiments(control_type, num_trials=5):
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 15
+        num_obs = 20
         obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
@@ -957,8 +957,8 @@ def run_experiments(control_type, num_trials=5):
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=True,
-                                                    save_animation=True,
+                                                    show_animation=False,
+                                                    save_animation=False,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
                                                     env=env_handler)
@@ -1000,9 +1000,9 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    run_experiments('cbf_qp', num_trials=10)
+    # run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
-    # single_agent_main('cbf_qp')
+    single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')
