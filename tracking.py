@@ -5,6 +5,8 @@ import os
 import glob
 import subprocess
 
+np.random.seed(42)
+
 """
 Created on June 20th, 2024
 @author: Taekyung Kim
@@ -32,11 +34,12 @@ class InfeasibleError(Exception):
 
 class LocalTrackingController:
     def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
-                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=True, ax=None, fig=None, env=None):
+                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=True, ax=None, fig=None, env=None, trial_folder=None):
 
         self.robot_spec = robot_spec
         self.control_type = control_type  # 'cbf_qp' or 'mpc_cbf'
         self.dt = dt
+        self.trial_folder = trial_folder
 
         self.state_machine = 'idle'  # Can be 'idle', 'track', 'stop', 'rotate'
         self.rotation_threshold = 0.1  # Radians
@@ -119,7 +122,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 10 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -139,9 +142,20 @@ class LocalTrackingController:
         self.goal = None
 
     def setup_animation_saving(self):
-        self.current_directory_path = os.getcwd()
-        if not os.path.exists(self.current_directory_path + "/output/animations"):
-            os.makedirs(self.current_directory_path + "/output/animations")
+        # self.current_directory_path = os.getcwd()
+        # if not os.path.exists(self.current_directory_path + "/output/animations"):
+        #     os.makedirs(self.current_directory_path + "/output/animations")
+        # self.save_per_frame = 2
+        # self.ani_idx = 0
+        if self.trial_folder is None:
+            self.current_directory_path = os.getcwd()
+            folder = os.path.join(self.current_directory_path, "output", "animations")
+        else:
+            folder = self.trial_folder
+
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        self.save_folder = folder  # 실제 저장에 사용할 폴더
         self.save_per_frame = 2
         self.ani_idx = 0
 
@@ -433,8 +447,8 @@ class LocalTrackingController:
             if self.save_animation:
                 self.ani_idx += 1
                 if force_save or self.ani_idx % self.save_per_frame == 0:
-                    plt.savefig(self.current_directory_path +
-                                "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png")
+                    plt.savefig(os.path.join(self.save_folder, "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png"))
+
 
     def control_step(self):
         '''
@@ -895,34 +909,16 @@ def run_experiments(control_type, num_trials=100):
     
     model = 'KinematicBicycle2D_C3BF'
     waypoints = np.array([[4, 7, 0], [21, 7, 0]], dtype=np.float64)
-    # known_obs = np.array([
-    #     [8.0, 4.0, 0.5],
-    #     [9.0, 9.0, 0.5],
-    #     [10.0, 2.0, 0.5],
-    #     [11.0, 11.0, 0.5],
-    #     [12.0, 5.0, 0.5],
-    #     [13.0, 6.0, 0.5],
-    #     [14.0, 1.0, 0.5],
-    #     [15.0, 10.0, 0.5],
-    #     [16.0, 3.0, 0.5],
-    #     [17.0, 7.0, 0.5],
-    #     [18.0, 2.0, 0.5],
-    #     [19.0, 10.0, 0.5],
-    #     [20.0, 4.0, 0.5],
-    #     [21.0, 8.0, 0.5],
-    #     [22.0, 12.0, 0.5],
-    # ])
 
     for trial in range(num_trials):
+        trial_folder = os.path.join(os.getcwd(), "output", "animations", f"trial_{trial+1}")
         # Generate random elements with a fixed seed
-        np.random.seed(42+trial)
-
         # Generate random dynamic obstacles
-        num_obs = 25
-        obs_x = np.random.uniform(low=8, high=20, size=(num_obs, 1))
+        num_obs = 10
+        obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
-        obs_vx = np.random.uniform(low=-0.3, high= -0.1, size=(num_obs, 1))
+        obs_vx = np.random.uniform(low=-0.2, high= -0.2, size=(num_obs, 1))
         obs_vy = np.random.uniform(low= -0.2, high= 0.2, size=(num_obs, 1))
         y_min_val, y_max_val = 2.0, 12.0
         y_min = np.full((num_obs, 1), y_min_val)
@@ -930,20 +926,8 @@ def run_experiments(control_type, num_trials=100):
         known_obs = np.hstack((obs_x, obs_y, obs_r, obs_vx, obs_vy, y_min, y_max))
         known_obs[:, :2] += 0
 
-        # Convert to dynamic obstacles (based on KinematicBicycle2D_C3BF)
-        # dynamic_obs = []
-        # for i, obs_info in enumerate(known_obs):
-        #     ox, oy, r = obs_info[:3]
-        #     if i % 2 == 1:
-        #         vx, vy = -0.2, -0.2
-        #     else:
-        #         vx, vy = -0.2, 0.2
-        #     y_min, y_max = 2.0, 13.0
-        #     dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
-        # known_obs = np.array(dynamic_obs)
-
         # Initial state (based on the first waypoint)
-        x_init = np.append(waypoints[0], 1.0)
+        x_init = np.append(waypoints[0], 0.5)
         robot_spec = {
             'model': model,
             'a_max': 0.5,
@@ -963,6 +947,7 @@ def run_experiments(control_type, num_trials=100):
         ax, fig = plot_handler.plot_grid("")
         env_handler = env.Env()
 
+        trial_folder = os.path.join(os.getcwd(), "output", "animations", f"trial_{trial+1}")
         # Create the controller (disable animation)
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
@@ -971,7 +956,7 @@ def run_experiments(control_type, num_trials=100):
                                                     save_animation=False,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
-                                                    env=env_handler)
+                                                    env=env_handler, trial_folder=trial_folder)
         tracking_controller.obs = known_obs
         tracking_controller.set_waypoints(waypoints)
 
@@ -990,6 +975,7 @@ def run_experiments(control_type, num_trials=100):
         except Exception as e:
             outcomes["collision"] += 1
 
+        # tracking_controller.export_video()
         plt.close(fig)  # Close the figure to manage memory
 
     total = sum(outcomes.values())
@@ -1009,9 +995,9 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # run_experiments('cbf_qp', num_trials=100)
+    run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
-    single_agent_main('cbf_qp')
+    # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')
