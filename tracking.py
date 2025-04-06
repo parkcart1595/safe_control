@@ -920,7 +920,7 @@ def run_experiments(control_type, num_trials=5):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
         num_obs = 15
-        obs_x = np.random.uniform(low=8, high=20, size=(num_obs, 1))
+        obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
         obs_vx = np.random.uniform(low=-0.2, high= -0.2, size=(num_obs, 1))
@@ -932,7 +932,7 @@ def run_experiments(control_type, num_trials=5):
         known_obs[:, :2] += 0
 
         # Initial state (based on the first waypoint)
-        x_init = np.append(waypoints[0], 1.0)
+        x_init = np.append(waypoints[0], 0.5)
         robot_spec = {
             'model': model,
             'a_max': 0.5,
@@ -961,7 +961,7 @@ def run_experiments(control_type, num_trials=5):
                                                     save_animation=True,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
-                                                    env=env_handler,trial_folder=trial_folder)
+                                                    env=env_handler)
         tracking_controller.obs = known_obs
         tracking_controller.set_waypoints(waypoints)
 
@@ -1000,7 +1000,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    run_experiments('cbf_qp', num_trials=100)
+    run_experiments('cbf_qp', num_trials=10)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')

@@ -69,18 +69,11 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
 
         p_rel_mag = np.linalg.norm(p_rel)
         v_rel_mag = np.linalg.norm(v_rel)
-        v_rel_new_mag = np.linalg.norm(v_rel_new)
 
         # Compute d_safe safely
         # eps = 1e-6
         eps = 1e-6
         d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
-
-        # Compute obs_vel
-        obs_vel_vector = np.array([obs_vel_x, obs_vel_y])
-        obs_vel_mag = np.linalg.norm(obs_vel_vector)
-        obs_vel_dir = np.arctan2(obs_vel_y, obs_vel_x)
-        obs_vel = obs_vel_mag * np.sign(np.cos(obs_vel_dir))
 
         # Penalty term
         k_lamda, k_mu = 0.5, 0.5
