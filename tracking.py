@@ -874,7 +874,7 @@ def run_experiments(control_type, num_trials=100):
         trial_folder = os.path.join(os.getcwd(), "output", "animations", f"trial_{trial+1}")
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 10
+        num_obs = 15
         obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
@@ -912,8 +912,8 @@ def run_experiments(control_type, num_trials=100):
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=False,
-                                                    save_animation=False,
+                                                    show_animation=True,
+                                                    save_animation=True,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
                                                     env=env_handler, trial_folder=trial_folder)
@@ -955,9 +955,9 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # run_experiments('cbf_qp', num_trials=100)
+    run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
-    single_agent_main('cbf_qp')
+    # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')
