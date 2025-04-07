@@ -120,7 +120,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 10 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -243,7 +243,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=10):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -974,11 +974,11 @@ def run_experiments(control_type, num_trials=100):
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=False,
-                                                    save_animation=False,
+                                                    show_animation=True,
+                                                    save_animation=True,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
-                                                    env=env_handler)
+                                                    env=env_handler, trial_folder=trial_folder)
         tracking_controller.obs = known_obs
         tracking_controller.set_waypoints(waypoints)
 
@@ -1017,9 +1017,9 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # run_experiments('cbf_qp', num_trials=100)
+    run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
-    single_agent_main('cbf_qp')
+    # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')
