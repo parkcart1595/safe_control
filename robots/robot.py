@@ -490,9 +490,9 @@ class BaseRobot:
 
             # Penalty term
             # a, b = 0.01, 1.5
-            a, b = 0.5, 0.5
-            slope_pen = a * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
-            dist_pen = b * np.sqrt(d_safe)
+            a, b = 0.5, 0.2
+            slope_pen = a * d_safe / v_rel_mag # same as 1/tan(phi)
+            dist_pen = b * d_safe
 
             rot_angle = np.arctan2(p_rel[1], p_rel[0])
             # angle = np.pi/2 - rot_angle
