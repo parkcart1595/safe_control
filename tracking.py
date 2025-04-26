@@ -120,7 +120,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 20 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 25 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -243,7 +243,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=20):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=25):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -362,7 +362,6 @@ class LocalTrackingController:
         # if self.unknown_obs is None:
         #     return False
         robot_radius = self.robot.robot_radius
-        print(self.robot.robot_radius)
         if self.unknown_obs is not None:
             for obs in self.unknown_obs:
                 # check if the robot collides with the obstacle
@@ -541,7 +540,9 @@ class LocalTrackingController:
 
         if self.goal is None and self.state_machine != 'stop':
             return -1  # all waypoints reached
-        return beyond_flag
+        else: 
+            return 0
+        # return beyond_flag
 
     def draw_infeasible(self):
         if self.show_animation:
@@ -594,12 +595,14 @@ class LocalTrackingController:
         print("===================================")
         print("============ Tracking =============")
         print("Start following the generated path.")
-        unexpected_beh = 0
+         # unexpected_beh = 0
 
+        ret = None
+        
         for _ in range(int(tf / self.dt)):
             ret = self.control_step()
             self.draw_plot()
-            unexpected_beh += ret
+            # unexpected_beh += ret
             if ret == -1:  # all waypoints reached
                 break
 
@@ -611,24 +614,24 @@ class LocalTrackingController:
             plt.ioff()
             plt.close()
 
-        return unexpected_beh
+        return ret
 
 
 def single_agent_main(control_type):
     dt = 0.05
     model = 'KinematicBicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
-    waypoints = [
-        [2, 2, math.pi/2],
-        [2, 12, 0],
-        [12, 12, 0],
-        [12, 2, 0]
-    ]
+    # waypoints = [
+    #     [2, 2, math.pi/2],
+    #     [2, 12, 0],
+    #     [12, 12, 0],
+    #     [12, 2, 0]
+    # ]
 
     # Define static obs
-    known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 1.0], [4.0, 3.5, 1.5],
-                        [9.0, 6.5, 0.4],
-                        [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
+    # known_obs = np.array([[2.2, 5.0, 0.2], [3.0, 5.0, 0.2], [4.0, 9.0, 0.3], [1.5, 10.0, 0.5], [9.0, 11.0, 1.0], [7.0, 7.0, 1.0], [4.0, 3.5, 1.5],
+    #                     [9.0, 6.5, 0.4],
+    #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
 
     env_width = 14.0
     env_height = 14.0
@@ -641,10 +644,10 @@ def single_agent_main(control_type):
     #     [12, 12, 0],
     #     [12, 2, 0]
     # ]
-    # # waypoints = [
-    # #      [15, 8, 0],
-    # #      [24, 8, 0],
-    # # ]
+    waypoints = [
+         [2, 8, 0],
+         [12, 8, 0],
+    ]
     # waypoints = np.array(waypoints)
     # waypoints[:, :2] += 2
     # # # Define static obs
@@ -682,7 +685,7 @@ def single_agent_main(control_type):
 
 
     # # known_obs = np.array([[20, 9.5, 0.5]])
-    # # known_obs = np.array([[4.0, 6.0, 0.8]])
+    known_obs = np.array([[10.0, 8.0, 0.5]])
     # known_obs[:, :2] += 2
 
     # env_width = 18.0
@@ -739,7 +742,7 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 0:
-                vx, vy = -0.2, -0.2
+                vx, vy = -0.3, -0.0
             else:
                 vx, vy = 0.2, 0.2
             y_min, y_max = 0.0, 18.0
@@ -936,7 +939,7 @@ def run_experiments(control_type, num_trials=100):
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 20
+        num_obs = 25
         obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))

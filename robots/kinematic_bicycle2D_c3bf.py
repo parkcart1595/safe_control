@@ -76,11 +76,11 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         # d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
         d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
         # Penalty term
-        k_lamda, k_mu = 0.1, 1.0
-        d_pen = 1/5 
+        k_lamda, k_mu = 0.3, 1.0
+        d_pen = v_rel_mag
         # vel_pen = a * v_rel_mag
-        lamda = k_lamda * d_safe / v_rel_mag # same as 1/tan(phi)
-        mu = k_mu * (d_safe - d_pen)
+        lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
+        mu = k_mu * (np.sqrt(d_safe) - d_pen)
         
         # Barrier function h(x)
         h = v_rel_new_x + lamda * (v_rel_new_y**2) + mu
@@ -93,7 +93,7 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
         dh_dx[0, 0] = - k_lamda * p_rel_x / (v_rel_mag * np.sqrt(d_safe)) * (v_rel_new_y)**2 - k_lamda * p_rel_x / np.sqrt(d_safe)
         dh_dx[0, 1] = - k_lamda * p_rel_y / (v_rel_mag * np.sqrt(d_safe)) * (v_rel_new_y)**2 - k_lamda * p_rel_y / np.sqrt(d_safe)
         dh_dx[0, 2] = np.cos(rot_angle) * v * np.sin(theta) - np.sin(rot_angle) * v * np.cos(theta) - k_lamda * np.sqrt(d_safe) / v_rel_mag**3 * (v_rel_x * v * np.sin(theta) - v_rel_y * v * np.cos(theta)) * (v_rel_new_y)**2 + 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * (-np.sin(rot_angle) * v * np.sin(theta) - np.cos(rot_angle) * v * np.cos(theta))
-        dh_dx[0, 3] = -np.cos(rot_angle) * np.cos(theta) - np.sin(rot_angle) * np.sin(theta) - k_lamda * np.sqrt(d_safe) / v_rel_mag**3 * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) * v_rel_new_y**2 + 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * (np.sin(rot_angle) * np.cos(theta) - np.cos(rot_angle) * np.sin(theta))
+        dh_dx[0, 3] = -np.cos(rot_angle) * np.cos(theta) - np.sin(rot_angle) * np.sin(theta) - k_lamda * np.sqrt(d_safe) / v_rel_mag**3 * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) * v_rel_new_y**2 + 2 * k_lamda * np.sqrt(d_safe) / v_rel_mag * v_rel_new_y * (np.sin(rot_angle) * np.cos(theta) - np.cos(rot_angle) * np.sin(theta)) - k_mu * (v - obs_vel_x * np.cos(theta) - obs_vel_y * np.sin(theta)) / v_rel_mag
 
         # dh_dx[0, 0] = - k_lamda * p_rel_x / v_rel_mag / p_rel_mag * (v_rel_new_y)**2 - k_lamda * p_rel_x
         # dh_dx[0, 1] = - k_lamda * p_rel_y / v_rel_mag / p_rel_mag * (v_rel_new_y)**2 - k_lamda * p_rel_y

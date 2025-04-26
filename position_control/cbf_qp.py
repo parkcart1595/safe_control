@@ -2,7 +2,7 @@ import numpy as np
 import cvxpy as cp
 
 class CBFQP:
-    def __init__(self, robot, robot_spec, num_obs=20):
+    def __init__(self, robot, robot_spec, num_obs=25):
         self.robot = robot
         self.robot_spec = robot_spec
         self.num_obs = num_obs
@@ -23,7 +23,7 @@ class CBFQP:
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            self.cbf_param['alpha'] = 3.0
+            self.cbf_param['alpha'] = 2.0
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
