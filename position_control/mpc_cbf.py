@@ -29,7 +29,7 @@ class MPCCBF:
             self.R = np.array([0.5, 0.5])  # Input cost matrix
         elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             self.Q = np.diag([50, 50, 1, 1])  # State cost matrix
-            self.R = np.array([0.5, 500.0])  # Input cost matrix
+            self.R = np.array([0.5, 100.0])  # Input cost matrix
         elif self.robot_spec['model'] == 'Quad2D':
             self.Q = np.diag([25, 25, 50, 10, 10, 50])
             self.R = np.array([0.5, 0.5])
@@ -109,7 +109,7 @@ class MPCCBF:
         _goal = model.set_variable(
             var_type='_tvp', var_name='goal', shape=(self.n_states, 1))
         _obs = model.set_variable(
-            var_type='_tvp', var_name='obs', shape=(5, 7)) # (num_obs, obs_info), where [x, y, r, vx, vy]
+            var_type='_tvp', var_name='obs', shape=(20, 7)) # (num_obs, obs_info), where [x, y, r, vx, vy]
 
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
             _alpha = model.set_variable(
@@ -258,17 +258,17 @@ class MPCCBF:
             # Handle up to 5 obstacles (if fewer than 5, substitute dummy obstacles)
             if self.obs is None:
                 # Before detecting any obstacle, set 5 dummy obstacles far away
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5, 1))  # 5 far away obstacles
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (20, 1))  # 5 far away obstacles
                 tvp_template['_tvp', :, 'obs'] = dummy_obstacles
             else:
                 num_obstacles = self.obs.shape[0]
-                if num_obstacles < 5:
+                if num_obstacles < 20:
                     # Add dummy obstacles for missing ones
-                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5 - num_obstacles, 1))
+                    dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (20 - num_obstacles, 1))
                     tvp_template['_tvp', :, 'obs'] = np.vstack([self.obs, dummy_obstacles])
                 else:
                     # Use the detected obstacles directly
-                    tvp_template['_tvp', :, 'obs'] = self.obs[:5, :]  # Limit to 5 obstacles
+                    tvp_template['_tvp', :, 'obs'] = self.obs[:20, :]  # Limit to 5 obstacles
 
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'KinematicBicycle2D_C3BF']:
                 tvp_template['_tvp', :, 'alpha'] = self.cbf_param['alpha']
@@ -287,7 +287,7 @@ class MPCCBF:
         _obs = self.model.tvp['obs']
 
         # Add a separate constraint for each of the 5 obstacles
-        for i in range(5):
+        for i in range(20):
             obs_i = _obs[i, :]  # Select the i-th obstacle
             cbf_constraint = self.compute_cbf_constraint(_x, _u, obs_i)
             mpc.set_nl_cons(f'cbf_{i}', -cbf_constraint, ub=0)
@@ -312,7 +312,7 @@ class MPCCBF:
             raise NotImplementedError('Model not implemented')
 
 
-        print(f'h_k: {h_k} | cbf constraint: {cbf_constraint}')
+        # print(f'h_k: {h_k} | cbf constraint: {cbf_constraint}')
 
         return cbf_constraint
 
@@ -333,16 +333,16 @@ class MPCCBF:
         
         if obs is None or len(obs) == 0:
             # No obstacles detected, set 5 dummy obstacles far away
-            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5, 1))
+            self.obs = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (20, 1))
         else:
             num_obstacles = len(obs)
-            if num_obstacles < 5:
+            if num_obstacles < 20:
                 # Add dummy obstacles for missing ones
-                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (5 - num_obstacles, 1))
+                dummy_obstacles = np.tile(np.array([1000, 1000, 0, 0, 0, 0, 0]), (20 - num_obstacles, 1))
                 self.obs = np.vstack([obs, dummy_obstacles])
             else:
                 # Use the detected obstacles directly (up to 5)
-                self.obs = np.array(obs[:5])
+                self.obs = np.array(obs[:20])
 
     def solve_control_problem(self, robot_state, control_ref, nearest_obs):
         # Set initial state and reference

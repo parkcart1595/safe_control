@@ -143,12 +143,12 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
             v_rel_mag = ca.norm_2(v_rel)
             
             eps = 1e-6
-            d_safe = np.fmax(p_rel_mag - ego_dim, eps)
+            d_safe = ca.fmax(p_rel_mag**2 - ego_dim**2, eps)
 
-            k_lamda, k_mu = 0.2, 1.0
+            k_lamda, k_mu = 0.36, 0.45
             
-            lamda = k_lamda * d_safe / v_rel_mag
-            mu = k_mu * d_safe
+            lamda = k_lamda * ca.sqrt(d_safe) / v_rel_mag
+            mu = k_mu * (ca.sqrt(d_safe) - v_rel_mag)
 
             # Compute h
             h = v_rel_new[0] + lamda * v_rel_new[1]**2 + mu

@@ -120,7 +120,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 25 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 20 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -243,7 +243,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=25):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=20):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -610,6 +610,7 @@ class LocalTrackingController:
 
         print("=====   Tracking finished    =====")
         print("===================================\n")
+        ret = -1
         if self.show_animation:
             plt.ioff()
             plt.close()
@@ -939,7 +940,7 @@ def run_experiments(control_type, num_trials=100):
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 25
+        num_obs = 20
         obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
@@ -1002,6 +1003,8 @@ def run_experiments(control_type, num_trials=100):
 
         # tracking_controller.export_video()
         plt.close(fig)  # Close the figure to manage memory
+        print("Experiment Outcomes:", outcomes)
+
 
     total = sum(outcomes.values())
     percentages = {k: 100 * v / total for k, v in outcomes.items()}
