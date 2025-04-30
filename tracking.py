@@ -58,7 +58,7 @@ class LocalTrackingController:
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
-        elif self.robot_spec['model'] == 'DoubleIntegrator2D':
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             if X0.shape[0] == 3:
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, X0[2]]).reshape(-1, 1)
             elif X0.shape[0] == 2:
@@ -120,7 +120,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 20 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 25 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -243,7 +243,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=20):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=25):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -252,7 +252,7 @@ class LocalTrackingController:
         
         if self.robot_spec['model'] == 'Quad2D':
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D','DoubleIntegrator2D_DPCBF', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
             angle_unpassed=np.pi*2
         
         if len(detected_obs) != 0:
@@ -478,7 +478,7 @@ class LocalTrackingController:
         if self.state_machine == 'rotate':
             goal_angle = np.arctan2(self.goal[1] - self.robot.X[1, 0],
                                     self.goal[0] - self.robot.X[0, 0])
-            if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
+            if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
             elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'Quad3D', 'VTOL2D']:
@@ -620,7 +620,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'KinematicBicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DoubleIntegrator2D_DPCBF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     # waypoints = [
     #     [2, 2, math.pi/2],
@@ -634,7 +634,7 @@ def single_agent_main(control_type):
     #                     [9.0, 6.5, 0.4],
     #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [13.5, 11.0, 0.6]])
 
-    env_width = 14.0
+    env_width = 25.0
     env_height = 14.0
     # dt = 0.05
     # model = 'KinematicBicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
@@ -647,7 +647,7 @@ def single_agent_main(control_type):
     # ]
     waypoints = [
          [2, 8, 0],
-         [12, 8, 0],
+         [24, 8, 0],
     ]
     # waypoints = np.array(waypoints)
     # waypoints[:, :2] += 2
@@ -656,37 +656,37 @@ def single_agent_main(control_type):
     #                     [10.0, 6.5, 0.4],
     #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [9.5, 10.5, 0.6]])
     # # Define linear mov obs
-    # # Case 1
-    # # known_obs = np.array([
-    # #     [8.0, 4.0, 0.5],  # obstacle 1
-    # #     [10.0, 8.0, 0.5],  # obstacle 2
-    # #     [12.0, 2.0, 0.5],  # obstacle 3
-    # #     [14.0, 11.0, 0.5],  # obstacle 4
-    # #     [16.0, 5.0, 0.5],  # obstacle 5
-    # # ])
+    # Case 1
+    # known_obs = np.array([
+    #     [6.0, 4.0, 0.5],  # obstacle 1
+    #     [8.0, 8.0, 0.5],  # obstacle 2
+    #     [10.0, 2.0, 0.5],  # obstacle 3
+    #     [14.0, 11.0, 0.5],  # obstacle 4
+    #     [16.0, 5.0, 0.5],  # obstacle 5
+    # ])
 
-    # # Case 2
-    # # known_obs = np.array([
-    # #     [8.0, 4.0, 0.5],  # obstacle 1
-    # #     [9.0, 9.0, 0.5],  # obstacle 2
-    # #     [10.0, 2.0, 0.5],  # obstacle 3
-    # #     [11.0, 11.0, 0.5],  # obstacle 4
-    # #     [12.0, 5.0, 0.5],  # obstacle 5
-    # #     [13.0, 6.0, 0.5],  # obstacle 6
-    # #     [14.0, 1.0, 0.5],  # obstacle 7
-    # #     [15.0, 10.0, 0.5],  # obstacle 8
-    # #     [16.0, 3.0, 0.5],  # obstacle 9
-    # #     [17.0, 7.0, 0.5],  # obstacle 10
-    # #     [18.0, 2.0, 0.5],  # obstacle 11
-    # #     [19.0, 10.0, 0.5],  # obstacle 12
-    # #     [20.0, 4.0, 0.5],  # obstacle 13
-    # #     [21.0, 8.0, 0.5],  # obstacle 14
-    # #     [22.0, 12.0, 0.5],  # obstacle 15
-    # # ])
+    # Case 2
+    known_obs = np.array([
+        [8.0, 4.0, 0.5],  # obstacle 1
+        [9.0, 9.0, 0.5],  # obstacle 2
+        [10.0, 2.0, 0.5],  # obstacle 3
+        [11.0, 11.0, 0.5],  # obstacle 4
+        [12.0, 5.0, 0.5],  # obstacle 5
+        [13.0, 6.0, 0.5],  # obstacle 6
+        [14.0, 1.0, 0.5],  # obstacle 7
+        [15.0, 10.0, 0.5],  # obstacle 8
+        [16.0, 3.0, 0.5],  # obstacle 9
+        [17.0, 7.0, 0.5],  # obstacle 10
+        [18.0, 2.0, 0.5],  # obstacle 11
+        [19.0, 10.0, 0.5],  # obstacle 12
+        [20.0, 4.0, 0.5],  # obstacle 13
+        [21.0, 8.0, 0.5],  # obstacle 14
+        [22.0, 12.0, 0.5],  # obstacle 15
+    ])
 
 
     # # known_obs = np.array([[20, 9.5, 0.5]])
-    known_obs = np.array([[10.0, 8.0, 0.5]])
+    # known_obs = np.array([[10.0, 8.0, 0.5]])
     # known_obs[:, :2] += 2
 
     # env_width = 18.0
@@ -706,6 +706,24 @@ def single_agent_main(control_type):
             'a_max': 1.0,
             'radius': 0.25
         }
+    elif model == 'DoubleIntegrator2D_DPCBF':
+        robot_spec = {
+            'model': 'DoubleIntegrator2D_DPCBF',
+            'v_max': 1.0,
+            'a_max': 1.0,
+            'radius': 0.25
+        }
+        dynamic_obs = []  
+        for i, obs_info in enumerate(known_obs):
+            ox, oy, r = obs_info[:3]
+            if i % 2 == 1:
+                vx, vy = 0.0, -0.2
+            else:
+                vx, vy = 0.0, 0.2
+            y_min, y_max = 0.0, 14.0
+            dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
+        known_obs = np.array(dynamic_obs)
+
     elif model == 'DynamicUnicycle2D':
         robot_spec = {
             'model': 'DynamicUnicycle2D',
@@ -824,7 +842,7 @@ def single_agent_main(control_type):
 
     waypoints = np.array(waypoints, dtype=np.float64)
 
-    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'Quad2D', 'Quad3D']:
+    if model in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF', 'Quad2D', 'Quad3D']:
         x_init = waypoints[0]
     elif model == 'VTOL2D':
         v_init = robot_spec['v_max'] # m/s
@@ -842,8 +860,8 @@ def single_agent_main(control_type):
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
-                                                  show_animation=True,
-                                                  save_animation=True,
+                                                  show_animation=False,
+                                                  save_animation=False,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
@@ -934,13 +952,13 @@ def run_experiments(control_type, num_trials=100):
     outcomes ={"reach_goal": 0, "collision": 0, "infeasible": 0}
     dt = 0.05
     
-    model = 'KinematicBicycle2D_C3BF'
+    model = 'DoubleIntegrator2D_DPCBF' # KinematicBicycle2D_C3BF, DoubleIntegrator2D_DPCBF
     waypoints = np.array([[4, 7, 0], [21, 7, 0]], dtype=np.float64)
 
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 20
+        num_obs = 25
         obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
@@ -953,12 +971,21 @@ def run_experiments(control_type, num_trials=100):
         known_obs[:, :2] += 0
 
         # Initial state (based on the first waypoint)
-        x_init = np.append(waypoints[0], 0.5)
+        # x_init = np.append(waypoints[0], 0.5)
+        # robot_spec = {
+        #     'model': model,
+        #     'a_max': 0.5,
+        #     'sensor': 'rgbd',
+        #     'radius': 0.5
+        # }
+
+        # For DoubleIntegrator2D
+        x_init = waypoints[0]
         robot_spec = {
             'model': model,
-            'a_max': 0.5,
-            'sensor': 'rgbd',
-            'radius': 0.5
+            'v_max': 1.0,
+            'a_max': 1.0,
+            'radius': 0.25
         }
 
         env_width = 25.0
