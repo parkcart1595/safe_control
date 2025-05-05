@@ -952,13 +952,13 @@ def run_experiments(control_type, num_trials=100):
     outcomes ={"reach_goal": 0, "collision": 0, "infeasible": 0}
     dt = 0.05
     
-    model = 'DoubleIntegrator2D_DPCBF' # KinematicBicycle2D_C3BF, DoubleIntegrator2D_DPCBF
+    model = 'KinematicBicycle2D_C3BF' # KinematicBicycle2D_C3BF, DoubleIntegrator2D_DPCBF
     waypoints = np.array([[4, 7, 0], [21, 7, 0]], dtype=np.float64)
 
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 10
+        num_obs = 20
         obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
@@ -971,22 +971,22 @@ def run_experiments(control_type, num_trials=100):
         known_obs[:, :2] += 0
 
         # Initial state (based on the first waypoint)
-        # x_init = np.append(waypoints[0], 0.5)
-        # robot_spec = {
-        #     'model': model,
-        #     'a_max': 0.5,
-        #     'sensor': 'rgbd',
-        #     'radius': 0.5
-        # }
-
-        # For DoubleIntegrator2D
-        x_init = waypoints[0]
+        x_init = np.append(waypoints[0], 0.5)
         robot_spec = {
             'model': model,
-            'v_max': 1.0,
-            'a_max': 1.0,
-            'radius': 0.25
+            'a_max': 0.5,
+            'sensor': 'rgbd',
+            'radius': 0.5
         }
+
+        # # For DoubleIntegrator2D
+        # x_init = waypoints[0]
+        # robot_spec = {
+        #     'model': model,
+        #     'v_max': 1.0,
+        #     'a_max': 1.0,
+        #     'radius': 0.25
+        # }
 
         env_width = 25.0
         env_height = 13.0

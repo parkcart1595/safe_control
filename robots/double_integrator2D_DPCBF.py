@@ -71,7 +71,7 @@ class DoubleIntegrator2D_DPCBF(DoubleIntegrator2D):
         # d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
         d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
         # Penalty term
-        k_lamda, k_mu = 1.0, 1.0
+        k_lamda, k_mu = 3.0, 1.0
         d_pen = v_rel_mag
         # vel_pen = a * v_rel_mag
         lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
