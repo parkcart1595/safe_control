@@ -16,6 +16,10 @@ class CBFQP:
         elif self.robot_spec['model'] == 'DynamicUnicycle2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D_C3BF':
+            self.cbf_param['alpha'] = 1.5
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D_DPCBF':
+            self.cbf_param['alpha'] = 1.5
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
@@ -25,7 +29,7 @@ class CBFQP:
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            self.cbf_param['alpha'] = 1.5
+            self.cbf_param['alpha'] = 3.5
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
@@ -54,6 +58,10 @@ class CBFQP:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['w_max']]
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF']:
+            constraints = [self.A1 @ self.u + self.b1 >= 0,
+                           cp.abs(self.u[0]) <= self.robot_spec['a_max'],
+                           cp.abs(self.u[1]) <= self.robot_spec['alpha_max']]
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
@@ -105,7 +113,7 @@ class CBFQP:
                 # deactivate the CBF constraints
                 self.A1.value = np.zeros_like(self.A1.value)
                 self.b1.value = np.zeros_like(self.b1.value)
-            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'DoubleIntegrator2D_DPCBF', 'KinematicBicycle2D_C3BF']:
+            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'KinematicBicycle2D_C3BF']:
                 h, dh_dx = self.robot.agent_barrier(obs)
                 self.A1.value[i,:] = dh_dx @ self.robot.g()
                 self.b1.value[i,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
@@ -126,7 +134,7 @@ class CBFQP:
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
 
-        # print(self.u.value)
+        print(self.u.value)
 
         # if self.cbf_controller.status != 'optimal':
         #     raise QPError("CBF-QP optimization failed")

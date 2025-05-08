@@ -83,6 +83,20 @@ class BaseRobot:
                 from robots.dynamic_unicycle2D import DynamicUnicycle2D
             self.robot = DynamicUnicycle2D(dt, robot_spec)
             self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D_C3BF':
+            try:
+                from dynamic_unicycle2D_c3bf import DynamicUnicycle2D_C3BF
+            except ImportError:
+                from robots.dynamic_unicycle2D_c3bf import DynamicUnicycle2D_C3BF
+            self.robot = DynamicUnicycle2D_C3BF(dt, robot_spec)
+            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'DynamicUnicycle2D_DPCBF':
+            try:
+                from dynamic_unicycle2D_dpcbf import DynamicUnicycle2D_DPCBF
+            except ImportError:
+                from robots.dynamic_unicycle2D_dpcbf import DynamicUnicycle2D_DPCBF
+            self.robot = DynamicUnicycle2D_DPCBF(dt, robot_spec)
+            self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
             try:
                 from double_integrator2D import DoubleIntegrator2D
@@ -145,6 +159,10 @@ class BaseRobot:
 
         self.collision_quad_patches = []
         self.collision_quad_patch = None
+        self.rel_vel_patches = []
+
+        self.collision_cone_patches = []
+        self.collision_cone_patch = None
         self.rel_vel_patches = []
 
         # Plot handles
@@ -286,7 +304,7 @@ class BaseRobot:
         return self.yaw
 
     def get_yaw_rate(self):
-        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             return self.U[1, 0]
         elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             return self.X[5, 0]
@@ -304,7 +322,7 @@ class BaseRobot:
     def set_orientation(self, theta):
         '''Currently only used for DoubleIntegrator2D model'''
         self.yaw = theta
-        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF']:
             self.X[2, 0] = theta
 
     def f(self):
@@ -324,7 +342,7 @@ class BaseRobot:
             return self.robot.nominal_input(self.X, goal, d_min, k_v)
         elif self.robot_spec['model'] in ['Unicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
@@ -365,7 +383,7 @@ class BaseRobot:
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF'] and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'VTOL2D']:
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad3D':
             self.yaw = self.X[8, 0]
@@ -441,13 +459,121 @@ class BaseRobot:
             if len(self.detected_points) > 0:
                 self.detected_points_scatter.set_offsets(
                     np.array(self.detected_points))
+                
+    def draw_collision_cone(self, X, obs_list, ax):
+        '''
+        Render the collision cone based on phi
+        obs: [obs_x, obs_y, obs_r]
+        '''
+        if self.robot_spec['model'] not in ['KinematicBicycle2D_C3BF', 'DynamicUnicycle2D_C3BF']:
+            return
+        
+        # Remove previous collision cones safely
+        if not hasattr(self, 'collision_cone_patches'):
+            self.collision_cone_patches = [] # Initialize attribute
+
+         # Remove previous relative vel safely
+        if not hasattr(self, 'rel_vel_patches'):
+            self.rel_vel_patches = []
+
+        for patch in list(self.collision_cone_patches):
+            if patch in ax.patches:
+                patch.remove()
+        self.collision_cone_patches.clear()
+
+        for arrow in self.rel_vel_patches:
+                arrow.remove()
+        self.rel_vel_patches.clear()
+
+        # Robot and obstacle positions
+        robot_pos = self.get_position()
+        theta = X[2, 0]
+        v = X[3, 0]
+
+        # Get colors for Collision Cone edges
+        colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
+
+        for i, obs in enumerate(obs_list):
+            obs = np.array(obs).flatten()
+            obs_pos = np.array([obs[0], obs[1]])
+            obs_radius = obs[2]
+            obs_vel_x = obs[3]
+            obs_vel_y = obs[4]
+
+            # Combine radius R
+            ego_dim = obs_radius + self.robot_spec['radius'] # max(c1,c2) + robot_width/2
+
+            v = X[3, 0]
+            omega = X[4, 0]
+            L_r = self.robot_spec['rear_ax_dist']
+
+            # For Kinematic Bicycle
+            # p_rel = obs_pos - robot_pos
+            # v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
+            #                 [obs_vel_y - v * np.sin(theta)]])
+
+            # For Dynamic Unicycle
+            p_rel = np.array([[obs[0] - (X[0, 0] + L_r * np.cos(theta))], 
+                        [obs[1] - (X[1, 0] + L_r * np.sin(theta))]])
+            v_rel = np.array([[obs_vel_x - (v * np.cos(theta) - L_r * np.sin(theta) * omega)], 
+                        [obs_vel_y - (v * np.sin(theta) + L_r * np.cos(theta) * omega)]])
+
+            p_rel_mag = np.linalg.norm(p_rel)
+
+            # Calculate Collision cone angle
+            phi = np.arcsin(ego_dim / p_rel_mag)
+
+            cone_dir = -p_rel / p_rel_mag
+            rot_matrix_left = np.array([[np.cos(phi), -np.sin(phi)],
+                                        [np.sin(phi),  np.cos(phi)]])
+            rot_matrix_right = np.array([[np.cos(-phi), -np.sin(-phi)],
+                                        [np.sin(-phi),  np.cos(-phi)]])
+            cone_left = (rot_matrix_left @ cone_dir).flatten()
+            cone_right = (rot_matrix_right @ cone_dir).flatten()
+
+            # Extend cone boundaries
+            cone_left = (robot_pos + 2 * cone_left).tolist()
+            cone_right = (robot_pos + 2 * cone_right).tolist()
+
+            # Draw the cone
+            cone_points = np.array ([robot_pos.tolist(), cone_left, cone_right])
+            collision_cone_patch = patches.Polygon( # only edgecolors different
+                cone_points, closed = True,
+                edgecolor=colors[i], linestyle='--', alpha=0.5, label=f"Obstacle {i}"
+            )
+            ax.add_patch(collision_cone_patch)
+            self.collision_cone_patches.append(collision_cone_patch)
+
+            # Plot the relative velocity vector for nearest obs
+            # v_rel_start = robot_pos
+
+            # if hasattr(self, 'v_rel_arrow') and self.v_rel_arrow is not None: # Remove previous velocity vector if exists
+            #     self.v_rel_arrow.remove()
+
+
+            # self.v_rel_arrow = ax.arrow(
+            #     v_rel_start[0], v_rel_start[1],
+            #     v_rel[0, 0], v_rel[1, 0],
+            #     color = 'red', width = 0.02, label = 'Relative Velocity'
+            # )
+            offset_angle = 0.003 * (i - (len(obs_list)//2))
+            R_offset = np.array([
+                [np.cos(offset_angle), -np.sin(offset_angle)],
+                [np.sin(offset_angle),  np.cos(offset_angle)]
+            ])
+            v_rel_offset = R_offset @ v_rel
+
+            arrow = ax.arrow(float(robot_pos[0]), float(robot_pos[1]),
+                            float(v_rel_offset[0]), float(v_rel_offset[1]),
+                            color=colors[i], width=0.01, alpha=1.0)
+            self.rel_vel_patches.append(arrow)
 
     def draw_collision_quad(self, X, obs_list, ax):
         '''
         Render the collision cone based on phi
         obs: [obs_x, obs_y, obs_r]
         '''
-        if self.robot_spec['model'] not in ['DoubleIntegrator2D_DPCBF', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] not in ['DoubleIntegrator2D_DPCBF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D_C3BF']:
             return
         
         # Remove previous collision cones safely
@@ -589,7 +715,7 @@ class BaseRobot:
             v = np.linalg.norm(self.U)
         elif self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF','DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
             v = self.X[3, 0]
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             vx = self.X[2, 0]
