@@ -55,20 +55,20 @@ class LocalTrackingController:
             elif X0.shape[0] != 3:
                 raise ValueError(
                     "Invalid initial state dimension for SingleIntegrator2D")
-        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF']:
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF']:
-            if X0.shape[0] == 3:
-                # [x, y, theta] → set v = 0.0, omega = 0.0
-                X0 = np.array([X0[0], X0[1], X0[2], 0.0, 0.0]).reshape(-1, 1)
-            elif X0.shape[0] == 4:
-                # [x, y, theta, v] → set omega = 0.0
-                X0 = np.array([X0[0], X0[1], X0[2], X0[3], 0.0]).reshape(-1, 1)
-            elif X0.shape[0] == 5:
-                X0 = np.array(X0).reshape(-1, 1)
-            else:
-                raise ValueError("Invalid initial state dimension for DynamicUnicycle2D_C3BF")
+        # elif self.robot_spec['model'] in [']:
+        #     if X0.shape[0] == 3:
+        #         # [x, y, theta] → set v = 0.0, omega = 0.0
+        #         X0 = np.array([X0[0], X0[1], X0[2], 0.0, 0.0]).reshape(-1, 1)
+        #     elif X0.shape[0] == 4:
+        #         # [x, y, theta, v] → set omega = 0.0
+        #         X0 = np.array([X0[0], X0[1], X0[2], X0[3], 0.0]).reshape(-1, 1)
+        #     elif X0.shape[0] == 5:
+        #         X0 = np.array(X0).reshape(-1, 1)
+        #     else:
+        #         raise ValueError("Invalid initial state dimension for DynamicUnicycle2D_C3BF")
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             if X0.shape[0] == 3:
                 X0 = np.array([X0[0], X0[1], 0.0, 0.0, X0[2]]).reshape(-1, 1)
@@ -749,8 +749,27 @@ def single_agent_main(control_type):
     elif model == 'DynamicUnicycle2D_C3BF':
         robot_spec = {
             'model': 'DynamicUnicycle2D_C3BF',
-            'w_max': 0.5,
-            'alpha_max': 0.5,
+            'w_max': 1.0,
+            # 'alpha_max': 0.5,
+            'a_max': 0.5,
+            'sensor': 'rgbd',
+            'radius': 0.25
+        }
+        dynamic_obs = []  
+        for i, obs_info in enumerate(known_obs):
+            ox, oy, r = obs_info[:3]
+            if i % 2 == 0:
+                vx, vy = -0.3, -0.0
+            else:
+                vx, vy = 0.2, 0.2
+            y_min, y_max = 0.0, 18.0
+            dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
+        known_obs = np.array(dynamic_obs)
+    elif model == 'DynamicUnicycle2D_DPCBF':
+        robot_spec = {
+            'model': 'DynamicUnicycle2D_DPCBF',
+            'w_max': 1.0,
+            # 'alpha_max': 0.5,
             'a_max': 0.5,
             'sensor': 'rgbd',
             'radius': 0.25
@@ -991,7 +1010,7 @@ def run_experiments(control_type, num_trials=100):
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 20
+        num_obs = 10
         obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
@@ -1024,7 +1043,7 @@ def run_experiments(control_type, num_trials=100):
             x_init = np.append(waypoints[0], 0.5)
             robot_spec = {
                 'model': model,
-                'w_max': 1.0,
+                'w_max': 0.5,
                 'alpha_max': 0.5,
                 'a_max': 0.5,
                 'sensor': 'rgbd',
@@ -1048,7 +1067,7 @@ def run_experiments(control_type, num_trials=100):
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=True,
+                                                    show_animation=False,
                                                     save_animation=False,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
@@ -1096,6 +1115,6 @@ if __name__ == "__main__":
     run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
-    #single_agent_main('cbf_qp')
+    # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')

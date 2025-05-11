@@ -33,7 +33,7 @@ class BaseRobot:
         dt: simulation time step
         ax: plot axis handle
         '''
-
+        self.ax = ax
         self.X = X0.reshape(-1, 1)
         self.dt = dt
         self.robot_spec = robot_spec
@@ -163,7 +163,7 @@ class BaseRobot:
 
         self.collision_cone_patches = []
         self.collision_cone_patch = None
-        self.rel_vel_patches = []
+        # self.rel_vel_patches = []
 
         # Plot handles
         self.vis_orient_len = 0.5
@@ -189,6 +189,37 @@ class BaseRobot:
                           wheel_length, wheel_width,
                           edgecolor='black', facecolor=color, alpha=0.7)
             )
+        # if self.robot_spec['model'] in ['DynamicUnicycle2D',
+        #                         'DynamicUnicycle2D_C3BF',
+        #                         'DynamicUnicycle2D_DPCBF']:
+        #     # body
+        #     self.body_patch = self.ax.add_patch(
+        #         plt.Rectangle(
+        #             (-self.robot_spec.get('body_length',0.6)/2,
+        #             -self.robot_spec.get('body_width',0.3)/2),
+        #             width  = self.robot_spec.get('body_length',0.6),
+        #             height = self.robot_spec.get('body_width',0.3),
+        #             edgecolor='black', facecolor='lime', alpha=0.6
+        #         )
+        #     )
+        #     # rear wheel
+        #     self.rear_wheel = self.ax.add_patch(
+        #         plt.Circle(
+        #             (-self.robot_spec.get('rear_ax_dist'), 0),
+        #             radius=self.robot_spec.get('body_width',0.3)*0.3,
+        #             edgecolor='black', facecolor='gray', alpha=0.8
+        #         )
+        #     )
+        #     # front wheel
+        #     self.front_wheel = self.ax.add_patch(
+        #         plt.Circle(
+        #             (+self.robot_spec.get('front_ax_dist',
+        #                                 self.robot_spec.get('body_length',0.6)-self.robot_spec.get('rear_ax_dist')),
+        #             0),
+        #             radius=self.robot_spec.get('body_width',0.3)*0.3,
+        #             edgecolor='black', facecolor='gray', alpha=0.8
+        #         )
+        #     )
         elif self.robot_spec['model'] == 'Quad2D':
             # Circle for the robot's position
             self.body_circle = ax.add_patch(plt.Circle(
@@ -398,6 +429,11 @@ class BaseRobot:
             self.vehicle_body.set_transform(trans_body)
             self.rear_wheel.set_transform(trans_rear)
             self.front_wheel.set_transform(trans_front)
+        # elif self.robot_spec['model'] in ['DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF']:
+        #     tf_body, tf_rear, tf_front = self.robot.render_rigid_body(self.X, self.U)
+        #     self.body_patch.set_transform(tf_body)
+        #     self.rear_wheel.set_transform(tf_rear)
+        #     self.front_wheel.set_transform(tf_front)
         elif self.robot_spec['model'] == 'Quad2D':
             self.body_circle.center = self.X[0, 0], self.X[1, 0]
             trans_rect = self.robot.render_rigid_body(self.X)
@@ -504,8 +540,6 @@ class BaseRobot:
             ego_dim = obs_radius + self.robot_spec['radius'] # max(c1,c2) + robot_width/2
 
             v = X[3, 0]
-            omega = X[4, 0]
-            L_r = self.robot_spec['rear_ax_dist']
 
             # For Kinematic Bicycle
             # p_rel = obs_pos - robot_pos
@@ -513,10 +547,10 @@ class BaseRobot:
             #                 [obs_vel_y - v * np.sin(theta)]])
 
             # For Dynamic Unicycle
-            p_rel = np.array([[obs[0] - (X[0, 0] + L_r * np.cos(theta))], 
-                        [obs[1] - (X[1, 0] + L_r * np.sin(theta))]])
-            v_rel = np.array([[obs_vel_x - (v * np.cos(theta) - L_r * np.sin(theta) * omega)], 
-                        [obs_vel_y - (v * np.sin(theta) + L_r * np.cos(theta) * omega)]])
+            p_rel = np.array([[obs[0] - X[0, 0]], 
+                        [obs[1] - X[1, 0]]])
+            v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
+                        [obs_vel_y - v * np.sin(theta)]])
 
             p_rel_mag = np.linalg.norm(p_rel)
 

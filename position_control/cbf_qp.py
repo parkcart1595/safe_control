@@ -17,7 +17,7 @@ class CBFQP:
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'DynamicUnicycle2D_C3BF':
-            self.cbf_param['alpha'] = 1.5
+            self.cbf_param['alpha'] = 1.0
         elif self.robot_spec['model'] == 'DynamicUnicycle2D_DPCBF':
             self.cbf_param['alpha'] = 1.5
         elif self.robot_spec['model'] == 'DoubleIntegrator2D':
@@ -54,14 +54,10 @@ class CBFQP:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['v_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['w_max']]
-        elif self.robot_spec['model'] == 'DynamicUnicycle2D':
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF']:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['w_max']]
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF']:
-            constraints = [self.A1 @ self.u + self.b1 >= 0,
-                           cp.abs(self.u[0]) <= self.robot_spec['a_max'],
-                           cp.abs(self.u[1]) <= self.robot_spec['alpha_max']]
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
@@ -125,7 +121,7 @@ class CBFQP:
             # solve_val = (self.A1.value[i, :] @ self.u.value + self.b1.value[i, :]
             #                 if self.u.value is not None else 'N/A')
             # print(f"Obstacle {i}: h = {h}, solved constraint value: {solve_val}")
-            
+            # print(f"obstacle {i}: dh_dh[0, 3] = {dh_dx[0, 3]} | dh_dh[0, 4] = {dh_dx[0, 4]} | u = {self.u.value}")
         self.u_ref.value = control_ref['u_ref']
 
         self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
@@ -134,7 +130,7 @@ class CBFQP:
         # Check QP error in tracking.py
         self.status = self.cbf_controller.status
 
-        print(self.u.value)
+        # print(self.u.value)
 
         # if self.cbf_controller.status != 'optimal':
         #     raise QPError("CBF-QP optimization failed")
