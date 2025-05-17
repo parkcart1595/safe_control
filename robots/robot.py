@@ -108,9 +108,9 @@ class BaseRobot:
             self.X = self.X[0:4]  # Remove the yaw angle from the state
         elif self.robot_spec['model'] == 'DoubleIntegrator2D_DPCBF':
             try:
-                from double_integrator2D_DPCBF import DoubleIntegrator2D_DPCBF
+                from double_integrator2D_dpcbf import DoubleIntegrator2D_DPCBF
             except ImportError:
-                from robots.double_integrator2D_DPCBF import DoubleIntegrator2D_DPCBF
+                from robots.double_integrator2D_dpcbf import DoubleIntegrator2D_DPCBF
             self.robot = DoubleIntegrator2D_DPCBF(dt, robot_spec)
             # X0: [x, y, vx, vy, theta]
             self.set_orientation(self.X[4, 0])
@@ -128,6 +128,13 @@ class BaseRobot:
             except ImportError:
                 from robots.kinematic_bicycle2D_c3bf import KinematicBicycle2D_C3BF
             self.robot = KinematicBicycle2D_C3BF(dt, robot_spec)
+            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
+            try:
+                from kinematic_bicycle2D_dpcbf import KinematicBicycle2D_DPCBF
+            except ImportError:
+                from robots.kinematic_bicycle2D_dpcbf import KinematicBicycle2D_DPCBF
+            self.robot = KinematicBicycle2D_DPCBF(dt, robot_spec)
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad2D':
             try:
@@ -167,7 +174,7 @@ class BaseRobot:
 
         # Plot handles
         self.vis_orient_len = 0.5
-        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             # Define robot dimensions
             self.robot_spec['body_length'] = self.robot_spec['front_ax_dist'] + self.robot_spec['rear_ax_dist']
             # Add vehicle body as a rectangle
@@ -335,7 +342,7 @@ class BaseRobot:
         return self.yaw
 
     def get_yaw_rate(self):
-        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             return self.U[1, 0]
         elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             return self.X[5, 0]
@@ -373,7 +380,7 @@ class BaseRobot:
             return self.robot.nominal_input(self.X, goal, d_min, k_v)
         elif self.robot_spec['model'] in ['Unicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
@@ -414,14 +421,14 @@ class BaseRobot:
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF'] and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad2D', 'VTOL2D']:
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad3D':
             self.yaw = self.X[8, 0]
         return self.X
 
     def render_plot(self):
-        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             '''
             Kinematic Bicycle renders the full rigid body
             '''
@@ -501,7 +508,7 @@ class BaseRobot:
         Render the collision cone based on phi
         obs: [obs_x, obs_y, obs_r]
         '''
-        if self.robot_spec['model'] not in ['KinematicBicycle2D_C3BF', 'DynamicUnicycle2D_C3BF']:
+        if self.robot_spec['model'] not in ['DynamicUnicycle2D_C3BF', 'KinematicBicycle2D_C3BF']:
             return
         
         # Remove previous collision cones safely
@@ -607,7 +614,7 @@ class BaseRobot:
         Render the collision cone based on phi
         obs: [obs_x, obs_y, obs_r]
         '''
-        if self.robot_spec['model'] not in ['DoubleIntegrator2D_DPCBF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D_C3BF']:
+        if self.robot_spec['model'] not in ['DoubleIntegrator2D_DPCBF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D_DPCBF']:
             return
         
         # Remove previous collision cones safely
@@ -658,7 +665,7 @@ class BaseRobot:
             d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
             # Penalty term
             # a, b = 0.01, 1.5
-            a, b = 0.5, 1.0
+            a, b = 0.5, 0.48
             d_pen = v_rel_mag
             slope_pen = a * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
             dist_pen = b * (np.sqrt(d_safe)- d_pen)
@@ -749,7 +756,7 @@ class BaseRobot:
             v = np.linalg.norm(self.U)
         elif self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF','DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF','DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             v = self.X[3, 0]
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             vx = self.X[2, 0]

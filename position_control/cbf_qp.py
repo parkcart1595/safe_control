@@ -29,7 +29,9 @@ class CBFQP:
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
-            self.cbf_param['alpha'] = 3.5
+            self.cbf_param['alpha'] = 1.5
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
+            self.cbf_param['alpha'] = 1.5
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
@@ -62,7 +64,7 @@ class CBFQP:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['a_max']]
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['beta_max']]
@@ -109,7 +111,7 @@ class CBFQP:
                 # deactivate the CBF constraints
                 self.A1.value = np.zeros_like(self.A1.value)
                 self.b1.value = np.zeros_like(self.b1.value)
-            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'KinematicBicycle2D_C3BF']:
+            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
                 h, dh_dx = self.robot.agent_barrier(obs)
                 self.A1.value[i,:] = dh_dx @ self.robot.g()
                 self.b1.value[i,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
@@ -118,9 +120,10 @@ class CBFQP:
                 self.A1.value[i,:] = dh_dot_dx @ self.robot.g()
                 self.b1.value[i,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
             
-            # solve_val = (self.A1.value[i, :] @ self.u.value + self.b1.value[i, :]
-            #                 if self.u.value is not None else 'N/A')
-            # print(f"Obstacle {i}: h = {h}, solved constraint value: {solve_val}")
+            solve_val = (self.A1.value[i, :] @ self.u.value + self.b1.value[i, :]
+                            if self.u.value is not None else 'N/A')
+            if h < 0 or (solve_val != 'N/A' and solve_val < 0):
+                print(f"Obstacle {i}: h = {h}, solved constraint value: {solve_val}")
             # print(f"obstacle {i}: dh_dh[0, 3] = {dh_dx[0, 3]} | dh_dh[0, 4] = {dh_dx[0, 4]} | u = {self.u.value}")
         self.u_ref.value = control_ref['u_ref']
 

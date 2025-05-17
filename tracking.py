@@ -77,7 +77,7 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] in ['Quad2D']:
@@ -263,7 +263,7 @@ class LocalTrackingController:
         
         if self.robot_spec['model'] == 'Quad2D':
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['DoubleIntegrator2D','DoubleIntegrator2D_DPCBF', 'Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D','DoubleIntegrator2D_DPCBF', 'Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D', 'VTOL2D']:
             angle_unpassed=np.pi*2
         
         if len(detected_obs) != 0:
@@ -492,7 +492,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'Quad3D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad2D', 'Quad3D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -511,7 +511,7 @@ class LocalTrackingController:
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-            if self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'DoubleIntegrator2D_DPCBF', 'DynamicUnicycle2D_DPCBF']:
+            if self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'DynamicUnicycle2D_DPCBF']:
                 self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
             elif self.robot_spec['model'] in ['DynamicUnicycle2D_C3BF']:
                 self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
@@ -527,7 +527,7 @@ class LocalTrackingController:
         # 7. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
         if self.pos_controller.status != 'optimal' or collide:
-            cause = "Collision" if collide else "Infeasible"
+            cause = "Collision" if collide else "Infeasible"    
             self.draw_infeasible()
             print(f"{cause} detected !!")
             if self.raise_error:
@@ -634,7 +634,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'DynamicUnicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DynamicUnicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     # waypoints = [
     #     [2, 2, math.pi/2],
@@ -802,9 +802,9 @@ def single_agent_main(control_type):
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
 
-    elif model == 'KinematicBicycle2D_C3BF':
+    elif model in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
         robot_spec = {
-            'model': 'KinematicBicycle2D_C3BF',
+            'model': model,
             'a_max': 0.5,
             'sensor': 'rgbd',
             'radius': 0.5
@@ -1004,13 +1004,13 @@ def run_experiments(control_type, num_trials=100):
     outcomes ={"reach_goal": 0, "collision": 0, "infeasible": 0}
     dt = 0.05
     
-    model = 'DynamicUnicycle2D_DPCBF' # KinematicBicycle2D_C3BF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
+    model = 'KinematicBicycle2D_DPCBF' # KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
     waypoints = np.array([[4, 7, 0], [21, 7, 0]], dtype=np.float64)
 
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 10
+        num_obs = 20
         obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
@@ -1023,7 +1023,7 @@ def run_experiments(control_type, num_trials=100):
         known_obs[:, :2] += 0
 
         # For Kinematic Bicycle
-        if model == 'KinematicBicycle2D_C3BF':
+        if model in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             x_init = np.append(waypoints[0], 0.5)
             robot_spec = {
                 'model': model,
@@ -1044,7 +1044,6 @@ def run_experiments(control_type, num_trials=100):
             robot_spec = {
                 'model': model,
                 'w_max': 0.5,
-                'alpha_max': 0.5,
                 'a_max': 0.5,
                 'sensor': 'rgbd',
                 'radius': 0.25
