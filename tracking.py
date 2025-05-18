@@ -65,7 +65,7 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] in ['Quad2D']:
@@ -240,7 +240,7 @@ class LocalTrackingController:
         
         if self.robot_spec['model'] == 'Quad2D':
             angle_unpassed=np.pi*2
-        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
@@ -450,7 +450,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'Quad2D', 'Quad3D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad2D', 'Quad3D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -469,11 +469,17 @@ class LocalTrackingController:
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_obs)
-            self.robot.draw_collision_cone(self.robot.X, [self.nearest_obs], self.ax)
+            if self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
+                self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
+            elif self.robot_spec['model'] == 'DynamicUnicycle2D_C3BF':
+                self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
-            self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
+            if self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
+                self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
+            elif self.robot_spec['model'] == 'DynamicUnicycle2D_C3BF':
+                self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
         plt.figure(self.fig.number)
 
         # 7. Raise an error if the QP is infeasible, or the robot collides with the obstacle
@@ -576,7 +582,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'VTOL2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -635,7 +641,21 @@ def single_agent_main(control_type):
                 vx, vy = -0.1, 0.05
             dynamic_obs.append([ox, oy, r, vx, vy])
         known_obs = np.array(dynamic_obs)
-
+    elif model == 'KinematicBicycle2D_DPCBF':
+        robot_spec = {
+            'model': 'KinematicBicycle2D_DPCBF',
+            'a_max': 0.5,
+            'radius': 0.5
+        }
+        dynamic_obs = []  
+        for i, obs_info in enumerate(known_obs):
+            ox, oy, r = obs_info[:3]
+            if i % 2 == 0:
+                vx, vy = 0.1, 0.05
+            else:
+                vx, vy = -0.1, 0.05
+            dynamic_obs.append([ox, oy, r, vx, vy])
+        known_obs = np.array(dynamic_obs)
     elif model == 'Quad2D':
         robot_spec = {
             'model': 'Quad2D',
@@ -728,8 +748,8 @@ def single_agent_main(control_type):
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=True,
-                                                  show_mpc_traj=True,
+                                                  save_animation=False,
+                                                  show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
 
@@ -820,8 +840,8 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main('mpc_cbf')
+    # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
-    # single_agent_main('cbf_qp')
+    single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')
