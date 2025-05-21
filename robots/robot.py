@@ -665,7 +665,7 @@ class BaseRobot:
             d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
             # Penalty term
             # a, b = 0.01, 1.5
-            a, b = 0.5, 0.48
+            a, b = 2.0, 1.0
             d_pen = v_rel_mag
             slope_pen = a * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
             dist_pen = b * (np.sqrt(d_safe)- d_pen)

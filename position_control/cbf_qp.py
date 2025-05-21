@@ -31,7 +31,7 @@ class CBFQP:
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
             self.cbf_param['alpha'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
-            self.cbf_param['alpha'] = 1.5
+            self.cbf_param['alpha'] = 2.0
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
@@ -122,7 +122,7 @@ class CBFQP:
             
             solve_val = (self.A1.value[i, :] @ self.u.value + self.b1.value[i, :]
                             if self.u.value is not None else 'N/A')
-            if h < 0 or (solve_val != 'N/A' and solve_val < 0):
+            if h < 0 and (solve_val != 'N/A' and solve_val < 0):
                 print(f"Obstacle {i}: h = {h}, solved constraint value: {solve_val}")
             # print(f"obstacle {i}: dh_dh[0, 3] = {dh_dx[0, 3]} | dh_dh[0, 4] = {dh_dx[0, 4]} | u = {self.u.value}")
         self.u_ref.value = control_ref['u_ref']
