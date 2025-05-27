@@ -647,9 +647,10 @@ class BaseRobot:
             obs_radius = obs[2]
             obs_vel_x = obs[3]
             obs_vel_y = obs[4]
-
+            
+            beta = 1.05
             # Combine radius R
-            ego_dim = obs_radius + self.robot_spec['radius'] # max(c1,c2) + robot_width/2 (we suppose safe r as radius)
+            ego_dim = (obs_radius + self.robot_spec['radius']) * beta # max(c1,c2) + robot_width/2 (we suppose safe r as radius)
 
             p_rel = obs_pos - robot_pos
             v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
@@ -665,10 +666,10 @@ class BaseRobot:
             d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
             # Penalty term
             # a, b = 0.01, 1.5
-            a, b = 2.0, 1.0
+            a, b = np.sqrt(beta**2 - 1)/beta, np.sqrt(beta**2 - 1)/beta
             d_pen = v_rel_mag
             slope_pen = a * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
-            dist_pen = b * (np.sqrt(d_safe)- d_pen)
+            dist_pen = b * (np.sqrt(d_safe) - v_rel_mag)
 
             rot_angle = np.arctan2(p_rel[1], p_rel[0])
             # angle = np.pi/2 - rot_angle
