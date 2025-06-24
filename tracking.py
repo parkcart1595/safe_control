@@ -634,7 +634,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'DynamicUnicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     # waypoints = [
     #     [2, 2, math.pi/2],
@@ -671,13 +671,13 @@ def single_agent_main(control_type):
     #                     [6.0, 13.0, 0.7], [5.0, 10.0, 0.6], [11.0, 5.0, 0.8], [9.5, 10.5, 0.6]])
     # # Define linear mov obs
     # Case 1
-    known_obs = np.array([
-        [10.0, 4.0, 0.5],  # obstacle 1
-        [13.0, 8.0, 0.5],  # obstacle 2
-        [16.0, 2.0, 0.5],  # obstacle 3
-        [19.0, 11.0, 0.5],  # obstacle 4
-        [22.0, 5.0, 0.5],  # obstacle 5
-    ])
+    # known_obs = np.array([
+    #     [10.0, 4.0, 0.5],  # obstacle 1
+    #     [13.0, 8.0, 0.5],  # obstacle 2
+    #     [16.0, 2.0, 0.5],  # obstacle 3
+    #     [19.0, 11.0, 0.5],  # obstacle 4
+    #     [22.0, 5.0, 0.5],  # obstacle 5
+    # ])
 
     # Case 2
     # known_obs = np.array([
@@ -700,7 +700,7 @@ def single_agent_main(control_type):
 
 
     # # known_obs = np.array([[20, 9.5, 0.5]])
-    # known_obs = np.array([[10.0, 8.0, 0.5]])
+    known_obs = np.array([[10.0, 8.0, 0.5]])
     # known_obs[:, :2] += 2
 
     # env_width = 18.0
@@ -1010,7 +1010,7 @@ def run_experiments(control_type, num_trials=100):
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 10
+        num_obs = 25
         obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
         obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))

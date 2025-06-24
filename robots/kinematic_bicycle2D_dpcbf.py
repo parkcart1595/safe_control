@@ -70,15 +70,11 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
         v_rel_mag = np.linalg.norm(v_rel)
 
         # Compute d_safe safely
-        # eps = 1e-6
         eps = 1e-6
-        # d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
         d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
-        # Penalty term
-        # k_lamda, k_mu = 0.29, 0.25
-        k_lamda, k_mu = np.sqrt(beta**2 - 1)/beta, np.sqrt(beta**2 - 1)/beta
-        d_pen = v_rel_mag
-        # vel_pen = a * v_rel_mag
+
+        k_lamda, k_mu = 0.5 * np.sqrt(beta**2 - 1)/ego_dim, 1.0 * np.sqrt(beta**2 - 1)/ego_dim
+
         lamda = k_lamda * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
         mu = k_mu * (np.sqrt(d_safe) - v_rel_mag)
         
@@ -147,12 +143,12 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
 
         return h, dh_dx
 
-    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.0):
+    def agent_barrier_dt(self, x_k, u_k, obs, robot_radius, beta=1.05):
         '''Discrete Time Q3BF'''
         # Dynamics equations for the next states
         x_k1 = self.step(x_k, u_k, casadi=True)
 
-        def h(x, obs, robot_radius, beta=1.0):
+        def h(x, obs, robot_radius, beta=1.05):
             theta = x[2, 0]
             v = x[3, 0]
 
@@ -190,7 +186,7 @@ class KinematicBicycle2D_DPCBF(KinematicBicycle2D):
             eps = 1e-6
             d_safe = ca.fmax(p_rel_mag**2 - ego_dim**2, eps)
 
-            k_lamda, k_mu = 0.7, 0.5
+            k_lamda, k_mu = ca.sqrt(beta**2 - 1)/beta, ca.sqrt(beta**2 - 1)/beta
             
             lamda = k_lamda * ca.sqrt(d_safe) / v_rel_mag
             mu = k_mu * (ca.sqrt(d_safe) - v_rel_mag)

@@ -54,7 +54,7 @@ class KinematicBicycle2D:
         if 'a_max' not in self.robot_spec:
             self.robot_spec['a_max'] = 0.5
         if 'delta_max' not in self.robot_spec:
-            self.robot_spec['delta_max'] = np.deg2rad(30)
+            self.robot_spec['delta_max'] = np.deg2rad(45)
         if 'beta_max' not in self.robot_spec:
             self.robot_spec['beta_max'] = self.beta(self.robot_spec['delta_max'])
 
