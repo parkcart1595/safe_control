@@ -633,23 +633,40 @@ class BaseRobot:
                 arrow.remove()
         self.rel_vel_patches.clear()
 
-        # Robot and obstacle positions
         robot_pos = self.get_position()
-        theta = X[2, 0]
-        v = X[3, 0]
 
-        # Get colors for Collision Cone edges
-        colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
+        obstacles_with_dist = []
+        for obs in obs_list:
+            obs_pos = np.array([obs[0], obs[1]])
+            distance = np.linalg.norm(obs_pos - robot_pos)
+            obstacles_with_dist.append((distance, obs))
 
-        for i, obs in enumerate(obs_list):
+        obstacles_with_dist.sort(key=lambda item: item[0])
+
+        num_to_plot = min(5, len(obstacles_with_dist))
+        closest_obs_list = [item[1] for item in obstacles_with_dist[:num_to_plot]]
+        
+        if num_to_plot > 0:
+            colors = plt.get_cmap('viridis')(np.linspace(0, 1, num_to_plot))
+        else:
+            colors = []
+
+        for i, obs in enumerate(closest_obs_list):
+                   # Robot and obstacle positions
+            
+            theta = X[2, 0]
+            v = X[3, 0]
+
+            # Get colors for Collision Cone edges
+            # colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
             obs = np.array(obs).flatten()
             obs_pos = np.array([obs[0], obs[1]])
             obs_radius = obs[2]
             obs_vel_x = obs[3]
             obs_vel_y = obs[4]
             
-            beta = 1.05
             # Combine radius R
+            beta = 1.1
             ego_dim = (obs_radius + self.robot_spec['radius']) * beta # max(c1,c2) + robot_width/2 (we suppose safe r as radius)
 
             p_rel = obs_pos - robot_pos
@@ -659,54 +676,71 @@ class BaseRobot:
             p_rel_mag = np.linalg.norm(p_rel)
             v_rel_mag = np.linalg.norm(v_rel)
 
-            # Calculate Collision cone angle
-
             # Compute d_safe safely
             eps = 1e-6
             d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
             # Penalty term
-            # a, b = 0.01, 1.5
-            a, b = np.sqrt(beta**2 - 1)/beta, np.sqrt(beta**2 - 1)/beta
-            d_pen = v_rel_mag
-            slope_pen = a * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
-            dist_pen = b * (np.sqrt(d_safe) - v_rel_mag)
+            k_lambda, k_mu = 0.7 * np.sqrt(beta**2 - 1)/ego_dim, 0.5 * np.sqrt(beta**2 - 1)/ego_dim
+
+            func_lambda = k_lambda * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
+            func_mu = k_mu * np.sqrt(d_safe)
 
             rot_angle = np.arctan2(p_rel[1], p_rel[0])
-            # angle = np.pi/2 - rot_angle
-            # R = np.array([[np.cos(angle), -np.sin(angle)],
-            #             [np.sin(angle),  np.cos(angle)]])
             R = np.array([[np.cos(rot_angle), np.sin(rot_angle)],
                         [-np.sin(rot_angle),  np.cos(rot_angle)]])
             
-            L = 1.5
-            y_new = np.linspace(-L, L, 200)
-            x_new = -slope_pen * (y_new**2) - dist_pen
-            # print(f"vel_pen: {vel_pen} | dist_pen: {dist_pen}")
+            v_rel_new = R @ v_rel
 
-            curve_points = []
-            for x_val, y_val in zip(x_new, y_new):
-                local_point = np.array([x_val, y_val]).reshape(2, 1)
-                # Transfer to global frame using rotation matrix 
-                global_point = robot_pos.reshape(2, 1) + R.T @ local_point
-                curve_points.append(global_point.flatten())
-            curve_points = np.array(curve_points)
-
-            # Draw quadratic function boundary
-            line, = ax.plot(curve_points[:, 0], curve_points[:, 1], color=colors[i], linestyle='-', linewidth=2.0, label=f"Quadratic Obs {i}")
-            self.collision_quad_patches.append(line)
+            v_rel_new_x = v_rel_new[0, 0]
+            v_rel_new_y = v_rel_new[1, 0]
             
-            offset_angle = 0.003 * (i - (len(obs_list)//2))
+            L = 1.5
+
+            y_disp = np.linspace(-L, L, 100)
+            x_disp = (- func_lambda * (y_disp**2) - func_mu)
+
+            pts_world = robot_pos.reshape(2,1) + R.T @ np.vstack([x_disp, y_disp])
+            line, = ax.plot(pts_world[0,:], pts_world[1,:],
+                            color=colors[i], linestyle='-', linewidth=2.0,
+                            label=f"Quadratic Obs {i}")
+            self.collision_quad_patches.append(line)
+
+            offset_angle = 0.0 * (i - (len(obs_list)//2))
             R_offset = np.array([
                 [np.cos(offset_angle), -np.sin(offset_angle)],
                 [np.sin(offset_angle),  np.cos(offset_angle)]
             ])
             v_rel_offset = R_offset @ v_rel
 
+            # x_offset = 0.28
+            # y_offset = 0.2
+            x_offset = 0.8
+            y_offset = 0.8
+        
             arrow = ax.arrow(float(robot_pos[0]), float(robot_pos[1]),
-                            float(v_rel_offset[0]), float(v_rel_offset[1]),
+                            float(x_offset * v_rel_offset[0]), float(y_offset * v_rel_offset[1]),
                             color=colors[i], width=0.02, alpha=1.0)
             self.rel_vel_patches.append(arrow)
 
+                        
+            # S_lambda = 1.0
+            # S_mu = 1.0
+            # L = 1.0
+            # y_new = np.linspace(-L, L, 100)
+            # x_new = - S_lambda * func_lambda * (y_new**2) - S_mu * func_mu
+
+            # curve_points = []
+            # for x_val, y_val in zip(x_new, y_new):
+            #     local_point = np.array([x_val, y_val]).reshape(2, 1)
+            #     # Transfer to global frame using rotation matrix 
+            #     global_point = robot_pos.reshape(2, 1) + R.T @ local_point
+            #     curve_points.append(global_point.flatten())
+            # curve_points = np.array(curve_points)
+
+            # # Draw quadratic function boundary
+            # line, = ax.plot(curve_points[:, 0], curve_points[:, 1], color=colors[i], linestyle='-', linewidth=2.0, label=f"Quadratic Obs {i}")\
+            # self.collision_quad_patches.append(line)
+            
     def process_sensing_footprints_visualization(self):
         '''
         Compute the exterior and interior coordinates and process to be used in fill method

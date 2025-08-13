@@ -40,23 +40,26 @@ class KinematicBicycle2D:
         self.robot_spec = robot_spec
 
         if 'wheel_base' not in self.robot_spec:
-            self.robot_spec['wheel_base'] = 0.5
+            self.robot_spec['wheel_base'] = 0.35
         if 'body_width' not in self.robot_spec:
             self.robot_spec['body_width'] = 0.3
         if 'radius' not in self.robot_spec:
-            self.robot_spec['radius'] = 0.5
+            self.robot_spec['radius'] = 0.3
         if 'front_ax_dist' not in self.robot_spec:
             self.robot_spec['front_ax_dist'] = 0.2
         if 'rear_ax_distance' not in self.robot_spec:
-            self.robot_spec['rear_ax_dist'] = 0.3
+            self.robot_spec['rear_ax_dist'] = 0.15
         if 'v_max' not in self.robot_spec:
-            self.robot_spec['v_max'] = 1.5
+            self.robot_spec['v_max'] = 3.5
         if 'a_max' not in self.robot_spec:
-            self.robot_spec['a_max'] = 0.5
+            self.robot_spec['a_max'] = 5.0
         if 'delta_max' not in self.robot_spec:
-            self.robot_spec['delta_max'] = np.deg2rad(45)
+            self.robot_spec['delta_max'] = np.deg2rad(32)
         if 'beta_max' not in self.robot_spec:
             self.robot_spec['beta_max'] = self.beta(self.robot_spec['delta_max'])
+        # V_min test
+        if 'v_min' not in self.robot_spec:
+            self.robot_spec['v_min'] = 0.2
 
     def beta(self, delta):
         # Computes the slip angle beta
@@ -118,6 +121,14 @@ class KinematicBicycle2D:
     def step(self, X, U, casadi=False):
         X = X + (self.f(X, casadi) + self.g(X, casadi) @ U) * self.dt
         X[2, 0] = angle_normalize(X[2, 0])
+        
+        v_min = self.robot_spec['v_min']
+        v_max = self.robot_spec['v_max']
+        if casadi:
+            X[3, 0] = ca.fmax(ca.fmin(X[3, 0], v_max), v_min)
+        else:
+            X[3, 0] = np.clip(X[3, 0], v_min, v_max)
+
         return X
    
     def nominal_input(self, X, G, d_min=0.05, k_theta=0.5, k_a = 1.5, k_v=0.5):
@@ -127,6 +138,7 @@ class KinematicBicycle2D:
         G = np.copy(G.reshape(-1, 1))  # goal state
         v_max = self.robot_spec['v_max']
         delta_max = self.robot_spec['delta_max']
+        v_min = self.robot_spec['v_min']
 
         distance = max(np.linalg.norm(X[0:2, 0] - G[0:2, 0]) - d_min, 0.05)
         theta_d = np.arctan2(G[1, 0] - X[1, 0], G[0, 0] - X[0, 0])
@@ -136,11 +148,15 @@ class KinematicBicycle2D:
         delta = np.clip(k_theta * error_theta, -delta_max, delta_max)  # Steering angle
         beta = self.beta(delta)  # Slip angle conversion
                 
-        if abs(error_theta) > np.deg2rad(90):
-            v = 0.0
-        else:
-            v = min(k_v * distance * np.cos(error_theta), v_max)
-            
+        # if abs(error_theta) > np.deg2rad(90):
+        #     v = 0.0
+        # else:
+        #     v = min(k_v * distance * np.cos(error_theta), v_max)
+
+        heading_scale = max(0.0, np.cos(error_theta))
+        v_cmd = k_v * distance * heading_scale
+        v = np.clip(v_cmd, v_min, v_max)
+                
         a = k_a * (v - X[3, 0])
         return np.array([a, beta]).reshape(-1, 1)
     

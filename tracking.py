@@ -131,7 +131,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 25 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 30 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -254,7 +254,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=25):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=30):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -262,9 +262,9 @@ class LocalTrackingController:
         '''
         
         if self.robot_spec['model'] == 'Quad2D':
-            angle_unpassed=np.pi*2
+            angle_unpassed=np.pi*1.2
         elif self.robot_spec['model'] in ['DoubleIntegrator2D','DoubleIntegrator2D_DPCBF', 'Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D', 'VTOL2D']:
-            angle_unpassed=np.pi*2
+            angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
             if len(self.obs) == 0:
@@ -912,7 +912,7 @@ def single_agent_main(control_type):
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
-                                                  show_animation=True,
+                                                  show_animation=False,
                                                   save_animation=False,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
@@ -1004,19 +1004,19 @@ def run_experiments(control_type, num_trials=100):
     outcomes ={"reach_goal": 0, "collision": 0, "infeasible": 0}
     dt = 0.05
     
-    model = 'KinematicBicycle2D_DPCBF' # KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
-    waypoints = np.array([[4, 7, 0], [21, 7, 0]], dtype=np.float64)
+    model = 'KinematicBicycle2D_C3BF' # KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
+    waypoints = np.array([[3, 10, 0], [37, 10, 0]], dtype=np.float64)
 
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 10
-        obs_x = np.random.uniform(low=7, high=20, size=(num_obs, 1))
-        obs_y = np.random.uniform(low=2, high=12, size=(num_obs, 1))
-        obs_r = np.random.uniform(low=0.3, high=0.5, size=(num_obs, 1))
-        obs_vx = np.random.uniform(low=-0.2, high= -0.2, size=(num_obs, 1))
-        obs_vy = np.random.uniform(low= -0.2, high= 0.2, size=(num_obs, 1))
-        y_min_val, y_max_val = 2.0, 12.0
+        num_obs = 100
+        obs_x = np.random.uniform(low=10, high=40, size=(num_obs, 1))
+        obs_y = np.random.uniform(low=3, high=17, size=(num_obs, 1))
+        obs_r = np.random.uniform(low=0.1, high=0.3, size=(num_obs, 1))
+        obs_vx = np.random.uniform(low=-0.8, high= -0.1, size=(num_obs, 1))
+        obs_vy = np.random.uniform(low= -0.8, high= 0.8, size=(num_obs, 1))
+        y_min_val, y_max_val = 3.0, 17.0
         y_min = np.full((num_obs, 1), y_min_val)
         y_max = np.full((num_obs, 1), y_max_val)
         known_obs = np.hstack((obs_x, obs_y, obs_r, obs_vx, obs_vy, y_min, y_max))
@@ -1027,9 +1027,9 @@ def run_experiments(control_type, num_trials=100):
             x_init = np.append(waypoints[0], 0.5)
             robot_spec = {
                 'model': model,
-                'a_max': 1.0,
-                'sensor': 'rgbd',
-                'radius': 0.5
+                'a_max': 5.0,
+                # 'sensor': 'rgbd',
+                'radius': 0.3
             }
         elif model == 'DoubleIntegrator2D_DPCBF':
             x_init = waypoints[0]
@@ -1049,8 +1049,8 @@ def run_experiments(control_type, num_trials=100):
                 'radius': 0.25
             }
 
-        env_width = 25.0
-        env_height = 13.0
+        env_width = 40.0
+        env_height = 20.0
 
         # If known_obs does not have 7 columns, pad it
         if known_obs.shape[1] != 7:
