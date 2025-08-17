@@ -136,6 +136,13 @@ class BaseRobot:
                 from robots.kinematic_bicycle2D_dpcbf import KinematicBicycle2D_DPCBF
             self.robot = KinematicBicycle2D_DPCBF(dt, robot_spec)
             self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_CBFVO':
+            try:
+                from kinematic_bicycle2D_cbfvo import KinematicBicycle2D_CBFVO
+            except ImportError:
+                from robots.kinematic_bicycle2D_cbfvo import KinematicBicycle2D_CBFVO
+            self.robot = KinematicBicycle2D_CBFVO(dt, robot_spec)
+            self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad2D':
             try:
                 from quad2D import Quad2D
@@ -174,7 +181,7 @@ class BaseRobot:
 
         # Plot handles
         self.vis_orient_len = 0.5
-        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
             # Define robot dimensions
             self.robot_spec['body_length'] = self.robot_spec['front_ax_dist'] + self.robot_spec['rear_ax_dist']
             # Add vehicle body as a rectangle
@@ -342,7 +349,7 @@ class BaseRobot:
         return self.yaw
 
     def get_yaw_rate(self):
-        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
             return self.U[1, 0]
         elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             return self.X[5, 0]
@@ -380,7 +387,7 @@ class BaseRobot:
             return self.robot.nominal_input(self.X, goal, d_min, k_v)
         elif self.robot_spec['model'] in ['Unicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
@@ -412,6 +419,9 @@ class BaseRobot:
 
     def agent_barrier_dt(self, x_k, u_k, obs):
         return self.robot.agent_barrier_dt(x_k, u_k, obs, self.robot_radius)
+    
+    def agent_barrier_vo(self, obs):
+        return self.robot.agent_barrier_vo(self.X, obs, self.robot_radius)
 
     def step(self, U, U_att=None):
         # wrap step function
@@ -421,14 +431,14 @@ class BaseRobot:
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF'] and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad2D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'Quad2D', 'VTOL2D']:
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad3D':
             self.yaw = self.X[8, 0]
         return self.X
 
     def render_plot(self):
-        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
             '''
             Kinematic Bicycle renders the full rigid body
             '''
@@ -533,10 +543,26 @@ class BaseRobot:
         theta = X[2, 0]
         v = X[3, 0]
 
-        # Get colors for Collision Cone edges
-        colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
+        obstacles_with_dist = []
+        for obs in obs_list:
+            obs_pos = np.array([obs[0], obs[1]])
+            distance = np.linalg.norm(obs_pos - robot_pos)
+            obstacles_with_dist.append((distance, obs))
 
-        for i, obs in enumerate(obs_list):
+        obstacles_with_dist.sort(key=lambda item: item[0])
+
+        num_to_plot = min(50, len(obstacles_with_dist))
+        closest_obs_list = [item[1] for item in obstacles_with_dist[:num_to_plot]]
+        
+        if num_to_plot > 0:
+            colors = plt.get_cmap('viridis')(np.linspace(0, 1, num_to_plot))
+        else:
+            colors = []
+
+        # Get colors for Collision Cone edges
+        # colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(obs_list)))
+
+        for i, obs in enumerate(closest_obs_list):
             obs = np.array(obs).flatten()
             obs_pos = np.array([obs[0], obs[1]])
             obs_radius = obs[2]
@@ -573,8 +599,8 @@ class BaseRobot:
             cone_right = (rot_matrix_right @ cone_dir).flatten()
 
             # Extend cone boundaries
-            cone_left = (robot_pos + 2 * cone_left).tolist()
-            cone_right = (robot_pos + 2 * cone_right).tolist()
+            cone_left = (robot_pos + 4 * cone_left).tolist()
+            cone_right = (robot_pos + 4 * cone_right).tolist()
 
             # Draw the cone
             cone_points = np.array ([robot_pos.tolist(), cone_left, cone_right])
@@ -689,13 +715,7 @@ class BaseRobot:
             R = np.array([[np.cos(rot_angle), np.sin(rot_angle)],
                         [-np.sin(rot_angle),  np.cos(rot_angle)]])
             
-            v_rel_new = R @ v_rel
-
-            v_rel_new_x = v_rel_new[0, 0]
-            v_rel_new_y = v_rel_new[1, 0]
-            
             L = 1.5
-
             y_disp = np.linspace(-L, L, 100)
             x_disp = (- func_lambda * (y_disp**2) - func_mu)
 
@@ -791,7 +811,7 @@ class BaseRobot:
             v = np.linalg.norm(self.U)
         elif self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF','DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF','DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
             v = self.X[3, 0]
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             vx = self.X[2, 0]

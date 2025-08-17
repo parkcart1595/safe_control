@@ -32,7 +32,20 @@ class InfeasibleError(Exception):
 
 class LocalTrackingController:
     def __init__(self, X0, robot_spec, control_type='cbf_qp', dt=0.05,
-                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=True, ax=None, fig=None, env=None,trial_folder=None):
+                 show_animation=False, save_animation=False, show_mpc_traj=False, raise_error=True, ax=None, fig=None, env=None,trial_folder=None,
+                 follow_view=True, view_size=(10.0, 6.0), view_smooth=0.2, lookahead=0.0, save_ext='svg'):
+        
+        # Following axis view set
+        self.follow_view = follow_view
+        self.view_size = view_size
+        self.view_smooth = view_smooth
+        self.lookahead = lookahead
+        self._cam_cx = None
+        self._cam_cy = None
+        self._env_xlim = None
+        self._env_ylim = None
+
+        self.save_ext = save_ext
 
         self.robot_spec = robot_spec
         self.control_type = control_type  # 'cbf_qp' or 'mpc_cbf'
@@ -55,7 +68,7 @@ class LocalTrackingController:
             elif X0.shape[0] != 3:
                 raise ValueError(
                     "Invalid initial state dimension for SingleIntegrator2D")
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         # elif self.robot_spec['model'] in [']:
@@ -77,7 +90,7 @@ class LocalTrackingController:
             elif X0.shape[0] != 5:
                 raise ValueError(
                     "Invalid initial state dimension for DoubleIntegrator2D")
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
             if X0.shape[0] == 3:  # set initial velocity to 0.0
                 X0 = np.array([X0[0], X0[1], X0[2], 0.0]).reshape(-1, 1)
         elif self.robot_spec['model'] in ['Quad2D']:
@@ -131,7 +144,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 30 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 100 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -175,15 +188,57 @@ class LocalTrackingController:
         if self.fig is None:
             self.fig = plt.figure()
         plt.ion()
-        self.ax.set_xlabel("X")
+        self.ax.set_xlabel("X [m]")
         if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             self.ax.set_ylabel("Z")
         else:
-            self.ax.set_ylabel("Y")
+            self.ax.set_ylabel("Y [m]")
         self.ax.set_aspect(1)
         self.fig.tight_layout()
         self.waypoints_scatter = self.ax.scatter(
             [], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
+        
+        self.ax.set_aspect(1)
+        self.fig.tight_layout()
+        self.waypoints_scatter = self.ax.scatter([], [], s=10, facecolors='g', edgecolors='g', alpha=0.5)
+        # Save environment lim
+        self._env_xlim = self.ax.get_xlim()
+        self._env_ylim = self.ax.get_ylim()
+
+    def _update_follow_view(self):
+        if not self.show_animation or not self.follow_view:
+            return
+
+        px, py = self.robot.get_position()
+        yaw = self.robot.get_orientation() if hasattr(self.robot, 'get_orientation') else 0.0
+
+        cx = px + self.lookahead * np.cos(yaw)
+        cy = py + self.lookahead * np.sin(yaw)
+
+        if self._cam_cx is None or np.hypot(cx - self._cam_cx, cy - self._cam_cy) > 0.02:
+            # Smoothing
+            if self._cam_cx is None:
+                self._cam_cx, self._cam_cy = cx, cy
+            else:
+                a = self.view_smooth  # 0~1
+                self._cam_cx = (1 - a) * self._cam_cx + a * cx
+                self._cam_cy = (1 - a) * self._cam_cy + a * cy
+
+        vw, vh = self.view_size
+        hw, hh = vw / 2.0, vh / 2.0
+
+        if self._env_xlim is None or self._env_ylim is None:
+            self._env_xlim = self.ax.get_xlim()
+            self._env_ylim = self.ax.get_ylim()
+
+        env_xmin, env_xmax = self._env_xlim
+        env_ymin, env_ymax = self._env_ylim
+
+        cx_clamped = np.clip(self._cam_cx, env_xmin + hw, env_xmax - hw)
+        cy_clamped = np.clip(self._cam_cy, env_ymin + hh, env_ymax - hh)
+
+        self.ax.set_xlim(cx_clamped - hw, cx_clamped + hw)
+        self.ax.set_ylim(cy_clamped - hh, cy_clamped + hh)
 
     def setup_robot(self, X0):
         from robots.robot import BaseRobot
@@ -254,7 +309,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=30):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=100):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -263,7 +318,7 @@ class LocalTrackingController:
         
         if self.robot_spec['model'] == 'Quad2D':
             angle_unpassed=np.pi*1.2
-        elif self.robot_spec['model'] in ['DoubleIntegrator2D','DoubleIntegrator2D_DPCBF', 'Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad3D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['DoubleIntegrator2D','DoubleIntegrator2D_DPCBF', 'Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'Quad3D', 'VTOL2D']:
             angle_unpassed=np.pi*1.2
         
         if len(detected_obs) != 0:
@@ -449,13 +504,19 @@ class LocalTrackingController:
             
             self.render_dyn_obs()
 
+            self._update_follow_view()
+
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
             plt.pause(pause)
             if self.save_animation:
                 self.ani_idx += 1
                 if force_save or self.ani_idx % self.save_per_frame == 0:
-                    plt.savefig(os.path.join(self.save_folder, "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png"))
+                    # plt.savefig(os.path.join(self.save_folder, "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png"))
+                    frame_idx = self.ani_idx // self.save_per_frame
+                    fname = os.path.join(self.save_folder, f"t_step_{frame_idx:04d}.{self.save_ext}")
+
+                    self.fig.savefig(fname, format=self.save_ext, bbox_inches='tight')
 
 
     def control_step(self):
@@ -492,7 +553,7 @@ class LocalTrackingController:
             if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
                 self.u_att = self.robot.rotate_to(goal_angle)
                 u_ref = self.robot.stop()
-            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'Quad2D', 'Quad3D', 'VTOL2D']:
+            elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'Quad2D', 'Quad3D', 'VTOL2D']:
                 u_ref = self.robot.rotate_to(goal_angle)
         elif self.goal is None:
             u_ref = self.robot.stop()
@@ -513,6 +574,7 @@ class LocalTrackingController:
                 self.robot.X, control_ref, self.nearest_multi_obs)
             if self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'DynamicUnicycle2D_DPCBF']:
                 self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
+                self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
             elif self.robot_spec['model'] in ['DynamicUnicycle2D_C3BF']:
                 self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
             # u = self.pos_controller.solve_control_problem(
@@ -634,7 +696,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D_CBFVO' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     # waypoints = [
     #     [2, 2, math.pi/2],
@@ -802,7 +864,7 @@ def single_agent_main(control_type):
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
 
-    elif model in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+    elif model in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
         robot_spec = {
             'model': model,
             'a_max': 0.5,
@@ -813,9 +875,9 @@ def single_agent_main(control_type):
         for i, obs_info in enumerate(known_obs):
             ox, oy, r = obs_info[:3]
             if i % 2 == 0:
-                vx, vy = -0.3, -0.0
+                vx, vy = -0.8, -0.0
             else:
-                vx, vy = 0.2, 0.2
+                vx, vy = 0.8, 0.8
             y_min, y_max = 0.0, 18.0
             dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
         known_obs = np.array(dynamic_obs)
@@ -912,11 +974,11 @@ def single_agent_main(control_type):
     tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                   control_type=control_type,
                                                   dt=dt,
-                                                  show_animation=False,
+                                                  show_animation=True,
                                                   save_animation=False,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
-                                                  env=env_handler)
+                                                  env=env_handler, follow_view=True, view_size=(20.0, 10.0), view_smooth=1.0, lookahead=1.0)
 
     # Set obstacles
     tracking_controller.obs = known_obs
@@ -1001,11 +1063,17 @@ def multi_agent_main(control_type, save_animation=False):
 
 def run_experiments(control_type, num_trials=100):
     from utils import plotting, env
+    import matplotlib as mpl
+    mpl.rcParams['svg.fonttype'] = 'none'
+    mpl.rcParams['savefig.transparent'] = True 
+    mpl.rcParams['path.simplify'] = True
+    mpl.rcParams['path.simplify_threshold'] = 0.1
+
     outcomes ={"reach_goal": 0, "collision": 0, "infeasible": 0}
     dt = 0.05
     
-    model = 'KinematicBicycle2D_C3BF' # KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
-    waypoints = np.array([[3, 10, 0], [37, 10, 0]], dtype=np.float64)
+    model = 'KinematicBicycle2D_DPCBF' # KinematicBicycle2D_DPCBFC3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
+    waypoints = np.array([[3, 10, 0], [45, 10, 0]], dtype=np.float64)
 
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
@@ -1014,16 +1082,16 @@ def run_experiments(control_type, num_trials=100):
         obs_x = np.random.uniform(low=10, high=40, size=(num_obs, 1))
         obs_y = np.random.uniform(low=3, high=17, size=(num_obs, 1))
         obs_r = np.random.uniform(low=0.1, high=0.3, size=(num_obs, 1))
-        obs_vx = np.random.uniform(low=-0.8, high= -0.1, size=(num_obs, 1))
+        obs_vx = np.random.uniform(low=-0.8, high= 0.0, size=(num_obs, 1))
         obs_vy = np.random.uniform(low= -0.8, high= 0.8, size=(num_obs, 1))
-        y_min_val, y_max_val = 3.0, 17.0
+        y_min_val, y_max_val = 0.5, 19.5
         y_min = np.full((num_obs, 1), y_min_val)
         y_max = np.full((num_obs, 1), y_max_val)
         known_obs = np.hstack((obs_x, obs_y, obs_r, obs_vx, obs_vy, y_min, y_max))
         known_obs[:, :2] += 0
 
         # For Kinematic Bicycle
-        if model in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        if model in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
             x_init = np.append(waypoints[0], 0.5)
             robot_spec = {
                 'model': model,
@@ -1049,7 +1117,7 @@ def run_experiments(control_type, num_trials=100):
                 'radius': 0.25
             }
 
-        env_width = 40.0
+        env_width = 48.0
         env_height = 20.0
 
         # If known_obs does not have 7 columns, pad it
@@ -1070,7 +1138,8 @@ def run_experiments(control_type, num_trials=100):
                                                     save_animation=False,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
-                                                    env=env_handler, trial_folder=trial_folder)
+                                                    env=env_handler, trial_folder=trial_folder,
+                                                    follow_view=True, view_size=(25.0, 15.0), view_smooth=0.25, lookahead=1.0, save_ext='svg')
         tracking_controller.obs = known_obs
         tracking_controller.set_waypoints(waypoints)
 
@@ -1111,6 +1180,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
+    # run_experiments('optimal_decay_cbf_qp', num_trials=100)
     run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)

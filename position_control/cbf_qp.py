@@ -2,7 +2,7 @@ import numpy as np
 import cvxpy as cp
 
 class CBFQP:
-    def __init__(self, robot, robot_spec, num_obs=25):
+    def __init__(self, robot, robot_spec, num_obs=100):
         self.robot = robot
         self.robot_spec = robot_spec
         self.num_obs = num_obs
@@ -31,7 +31,9 @@ class CBFQP:
         elif self.robot_spec['model'] == 'KinematicBicycle2D_C3BF':
             self.cbf_param['alpha'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
-            self.cbf_param['alpha'] = 2.5
+            self.cbf_param['alpha'] = 1.5
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_CBFVO':
+            self.cbf_param['alpha'] = 1.0
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
@@ -64,7 +66,7 @@ class CBFQP:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['a_max']]
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['beta_max']]
@@ -111,7 +113,7 @@ class CBFQP:
                 # deactivate the CBF constraints
                 self.A1.value = np.zeros_like(self.A1.value)
                 self.b1.value = np.zeros_like(self.b1.value)
-            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF']:
+            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
                 h, dh_dx = self.robot.agent_barrier(obs)
                 self.A1.value[i,:] = dh_dx @ self.robot.g()
                 self.b1.value[i,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
