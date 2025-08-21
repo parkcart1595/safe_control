@@ -87,14 +87,7 @@ class KinematicBicycle2D_CBFVO(KinematicBicycle2D):
             hx, hy, hth, hv = -p_hatx, -p_haty, 0.0, 0.0
 
         dh_dx = np.array([[hx, hy, hth, hv]])
-
-        # Compute dh_dx
-        # dh_dx = np.zeros((1, 4))
-        # dh_dx[0, 0] = -v_rel_x - v_rel_mag * p_rel_x / sqrt_term
-        # dh_dx[0, 1] = -v_rel_y - v_rel_mag * p_rel_y / sqrt_term
-        # dh_dx[0, 2] =  v * np.sin(theta) * p_rel_x - v * np.cos(theta) * p_rel_y + sqrt_term / v_rel_mag * (v * (obs_vel_x * np.sin(theta) - obs_vel_y * np.cos(theta)))
-        # dh_dx[0, 3] = -np.cos(theta) * p_rel_x -np.sin(theta) * p_rel_y + sqrt_term / v_rel_mag * (v - (obs_vel_x * np.cos(theta) + obs_vel_y * np.sin(theta)))
-
+        
         return h, dh_dx
 
     def agent_barrier_vo(self, X, obs, robot_radius, beta=1.0):

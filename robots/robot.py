@@ -143,6 +143,20 @@ class BaseRobot:
                 from robots.kinematic_bicycle2D_cbfvo import KinematicBicycle2D_CBFVO
             self.robot = KinematicBicycle2D_CBFVO(dt, robot_spec)
             self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_OVVO':
+            try:
+                from kinematic_bicycle2D_ovvo import KinematicBicycle2D_OVVO
+            except ImportError:
+                from robots.kinematic_bicycle2D_ovvo import KinematicBicycle2D_OVVO
+            self.robot = KinematicBicycle2D_OVVO(dt, robot_spec)
+            self.yaw = self.X[2, 0]
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_CVAR':
+            try:
+                from kinematic_bicycle2D_cvar import KinematicBicycle2D_CVAR
+            except ImportError:
+                from robots.kinematic_bicycle2D_cvar import KinematicBicycle2D_CVAR
+            self.robot = KinematicBicycle2D_CVAR(dt, robot_spec)
+            self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad2D':
             try:
                 from quad2D import Quad2D
@@ -181,7 +195,7 @@ class BaseRobot:
 
         # Plot handles
         self.vis_orient_len = 0.5
-        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
+        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'KinematicBicycle2D_OVVO', 'KinematicBicycle2D_CVAR']:
             # Define robot dimensions
             self.robot_spec['body_length'] = self.robot_spec['front_ax_dist'] + self.robot_spec['rear_ax_dist']
             # Add vehicle body as a rectangle
@@ -349,7 +363,7 @@ class BaseRobot:
         return self.yaw
 
     def get_yaw_rate(self):
-        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
+        if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'KinematicBicycle2D_OVVO', 'KinematicBicycle2D_CVAR']:
             return self.U[1, 0]
         elif self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
             return self.X[5, 0]
@@ -387,7 +401,7 @@ class BaseRobot:
             return self.robot.nominal_input(self.X, goal, d_min, k_v)
         elif self.robot_spec['model'] in ['Unicycle2D']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_v)
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'KinematicBicycle2D_OVVO', 'KinematicBicycle2D_CVAR']:
             return self.robot.nominal_input(self.X, goal, d_min, k_omega, k_a, k_v)
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             return self.robot.nominal_input(self.X, goal, d_min, k_v, k_a)
@@ -431,14 +445,14 @@ class BaseRobot:
         if self.robot_spec['model'] in ['SingleIntegrator2D', 'DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF'] and self.U_att is not None:
             self.U_att = U_att.reshape(-1, 1)
             self.yaw = self.robot.step_rotate(self.yaw, self.U_att)
-        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'Quad2D', 'VTOL2D']:
+        elif self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'KinematicBicycle2D_OVVO', 'KinematicBicycle2D_CVAR', 'Quad2D', 'VTOL2D']:
             self.yaw = self.X[2, 0]
         elif self.robot_spec['model'] == 'Quad3D':
             self.yaw = self.X[8, 0]
         return self.X
 
     def render_plot(self):
-        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
+        if self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'KinematicBicycle2D_OVVO', 'KinematicBicycle2D_CVAR']:
             '''
             Kinematic Bicycle renders the full rigid body
             '''
@@ -551,7 +565,7 @@ class BaseRobot:
 
         obstacles_with_dist.sort(key=lambda item: item[0])
 
-        num_to_plot = min(50, len(obstacles_with_dist))
+        num_to_plot = min(20, len(obstacles_with_dist))
         closest_obs_list = [item[1] for item in obstacles_with_dist[:num_to_plot]]
         
         if num_to_plot > 0:
@@ -669,7 +683,7 @@ class BaseRobot:
 
         obstacles_with_dist.sort(key=lambda item: item[0])
 
-        num_to_plot = min(5, len(obstacles_with_dist))
+        num_to_plot = min(20, len(obstacles_with_dist))
         closest_obs_list = [item[1] for item in obstacles_with_dist[:num_to_plot]]
         
         if num_to_plot > 0:
@@ -706,7 +720,7 @@ class BaseRobot:
             eps = 1e-6
             d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
             # Penalty term
-            k_lambda, k_mu = 0.7 * np.sqrt(beta**2 - 1)/ego_dim, 0.5 * np.sqrt(beta**2 - 1)/ego_dim
+            k_lambda, k_mu = 1.0 * np.sqrt(beta**2 - 1)/ego_dim, 0.7 * np.sqrt(beta**2 - 1)/ego_dim
 
             func_lambda = k_lambda * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
             func_mu = k_mu * np.sqrt(d_safe)
@@ -811,7 +825,7 @@ class BaseRobot:
             v = np.linalg.norm(self.U)
         elif self.robot_spec['model'] == 'Unicycle2D':
             v = self.U[0, 0]  # Linear velocity
-        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF','DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
+        elif self.robot_spec['model'] in ['DynamicUnicycle2D', 'DynamicUnicycle2D_C3BF','DynamicUnicycle2D_DPCBF', 'KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'KinematicBicycle2D_OVVO', 'KinematicBicycle2D_CVAR']:
             v = self.X[3, 0]
         elif self.robot_spec['model'] in ['DoubleIntegrator2D', 'DoubleIntegrator2D_DPCBF']:
             vx = self.X[2, 0]

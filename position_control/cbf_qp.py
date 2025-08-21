@@ -2,7 +2,7 @@ import numpy as np
 import cvxpy as cp
 
 class CBFQP:
-    def __init__(self, robot, robot_spec, num_obs=100):
+    def __init__(self, robot, robot_spec, num_obs=80):
         self.robot = robot
         self.robot_spec = robot_spec
         self.num_obs = num_obs
@@ -33,7 +33,11 @@ class CBFQP:
         elif self.robot_spec['model'] == 'KinematicBicycle2D_DPCBF':
             self.cbf_param['alpha'] = 1.5
         elif self.robot_spec['model'] == 'KinematicBicycle2D_CBFVO':
-            self.cbf_param['alpha'] = 1.0
+            self.cbf_param['alpha'] = 1.5
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_OVVO':
+            self.cbf_param['alpha'] = 1.5
+        elif self.robot_spec['model'] == 'KinematicBicycle2D_CVAR':
+            self.cbf_param['alpha'] = 1.5
         elif self.robot_spec['model'] == 'Quad2D':
             self.cbf_param['alpha1'] = 1.5
             self.cbf_param['alpha2'] = 1.5
@@ -46,6 +50,10 @@ class CBFQP:
     def setup_control_problem(self):
         self.u = cp.Variable((2, 1))
         self.u_ref = cp.Parameter((2, 1), value=np.zeros((2, 1)))
+
+        if self.robot_spec['model'] == 'KinematicBicycle2D_OVVO':
+            self.num_obs = self.num_obs * 2
+
         self.A1 = cp.Parameter((self.num_obs, 2), value=np.zeros((self.num_obs, 2)))
         self.b1 = cp.Parameter((self.num_obs, 1), value=np.zeros((self.num_obs, 1)))
         objective = cp.Minimize(cp.sum_squares(self.u - self.u_ref))
@@ -66,7 +74,7 @@ class CBFQP:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['a_max']]
-        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
+        elif self.robot_spec['model'] in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'KinematicBicycle2D_OVVO', 'KinematicBicycle2D_CVAR']:
             constraints = [self.A1 @ self.u + self.b1 >= 0,
                            cp.abs(self.u[0]) <= self.robot_spec['a_max'],
                            cp.abs(self.u[1]) <= self.robot_spec['beta_max']]
@@ -113,7 +121,7 @@ class CBFQP:
                 # deactivate the CBF constraints
                 self.A1.value = np.zeros_like(self.A1.value)
                 self.b1.value = np.zeros_like(self.b1.value)
-            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO']:
+            elif self.robot_spec['model'] in ['SingleIntegrator2D', 'Unicycle2D', 'DynamicUnicycle2D_C3BF', 'DynamicUnicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'KinematicBicycle2D_CVAR']:
                 h, dh_dx = self.robot.agent_barrier(obs)
                 self.A1.value[i,:] = dh_dx @ self.robot.g()
                 self.b1.value[i,:] = dh_dx @ self.robot.f() + self.cbf_param['alpha'] * h
@@ -121,7 +129,19 @@ class CBFQP:
                 h, h_dot, dh_dot_dx = self.robot.agent_barrier(obs)
                 self.A1.value[i,:] = dh_dot_dx @ self.robot.g()
                 self.b1.value[i,:] = dh_dot_dx @ self.robot.f() + (self.cbf_param['alpha1']+self.cbf_param['alpha2']) * h_dot + self.cbf_param['alpha1']*self.cbf_param['alpha2']*h
-            
+            elif self.robot_spec['model'] == 'KinematicBicycle2D_OVVO':
+                # This now returns two sets of (h, dh_dx)
+                (h_c, dh_dx_c), (h_p, dh_dx_p) = self.robot.agent_barrier(obs)
+
+                # Constraint 1: Clearance (at row 2*i)
+                self.A1.value[2*i, :] = dh_dx_c @ self.robot.g()
+                self.b1.value[2*i, :] = dh_dx_c @ self.robot.f() + self.cbf_param['alpha'] * h_c
+
+                # Constraint 2: Passtime (at row 2*i + 1)
+                # We use the same alpha, but you could define a separate one if needed
+                self.A1.value[2*i + 1, :] = dh_dx_p @ self.robot.g()
+                self.b1.value[2*i + 1, :] = dh_dx_p @ self.robot.f() + self.cbf_param['alpha'] * h_p
+                
             solve_val = (self.A1.value[i, :] @ self.u.value + self.b1.value[i, :]
                             if self.u.value is not None else 'N/A')
             # if h > 0 and (solve_val != 'N/A' and solve_val < 0):
