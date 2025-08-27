@@ -582,9 +582,10 @@ class BaseRobot:
             obs_radius = obs[2]
             obs_vel_x = obs[3]
             obs_vel_y = obs[4]
+            beta = 2.0
 
             # Combine radius R
-            ego_dim = obs_radius + self.robot_spec['radius'] # max(c1,c2) + robot_width/2
+            ego_dim = obs_radius + self.robot_spec['radius'] * beta # max(c1,c2) + robot_width/2
 
             v = X[3, 0]
 
@@ -683,7 +684,7 @@ class BaseRobot:
 
         obstacles_with_dist.sort(key=lambda item: item[0])
 
-        num_to_plot = min(20, len(obstacles_with_dist))
+        num_to_plot = min(30, len(obstacles_with_dist))
         closest_obs_list = [item[1] for item in obstacles_with_dist[:num_to_plot]]
         
         if num_to_plot > 0:
@@ -720,7 +721,7 @@ class BaseRobot:
             eps = 1e-6
             d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
             # Penalty term
-            k_lambda, k_mu = 1.0 * np.sqrt(beta**2 - 1)/ego_dim, 0.7 * np.sqrt(beta**2 - 1)/ego_dim
+            k_lambda, k_mu = 0.2 * np.sqrt(beta**2 - 1)/ego_dim, 0.6 * np.sqrt(beta**2 - 1)/ego_dim
 
             func_lambda = k_lambda * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
             func_mu = k_mu * np.sqrt(d_safe)

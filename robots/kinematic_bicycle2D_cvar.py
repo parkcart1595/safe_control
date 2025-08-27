@@ -12,7 +12,7 @@ class KinematicBicycle2D_CVAR(KinematicBicycle2D):
     def __init__(self, dt, robot_spec):
         super().__init__(dt, robot_spec)
 
-    def agent_barrier(self, X, obs, robot_radius, beta=1.1):
+    def agent_barrier(self, X, obs, robot_radius, beta=1.05):
         """
         '''Continuous Time C3BF'''
         Compute a Collision Cone Control Barrier Function for the Kinematic Bicycle2D.
@@ -63,15 +63,43 @@ class KinematicBicycle2D_CVAR(KinematicBicycle2D):
         cos_phi = sqrt_term / p_rel_mag
         rel_dot = np.dot(p_rel.T, v_rel)[0, 0]
         
+        p_rel_dot_v_rel = np.dot(p_rel.T, v_rel)[0, 0]
+        cos_theta_pv = p_rel_dot_v_rel / (p_rel_mag * v_rel_mag)
+
+        delta_k = 0.0
+        if p_rel_dot_v_rel < 0: # Approaching condition
+            delta_k = -cos_theta_pv
         # Compute h
-        h = p_rel_mag**2 - ego_dim**2 * (1 - np.dot(p_rel.T, v_rel)[0, 0] / (p_rel_mag * v_rel_mag))
+        h = p_rel_mag**2 - ego_dim**2 * (1 + delta_k)
 
         # Compute dh_dx
+        # dh_dx = np.zeros((1, 4))
+        # dh_dx[0, 0] = -2 * p_rel_x + ego_dim**2 * ((-v_rel_x) * p_rel_mag * v_rel_mag - rel_dot * (-p_rel_x)/p_rel_mag * v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
+        # dh_dx[0, 1] = -2 * p_rel_y + ego_dim**2 * ((-v_rel_y) * p_rel_mag * v_rel_mag - rel_dot * (-p_rel_y)/p_rel_mag * v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
+        # dh_dx[0, 2] = ego_dim**2 * ((p_rel_x * (v*np.sin(theta)) + p_rel_y * (-v*np.cos(theta)))* p_rel_mag * v_rel_mag - rel_dot * p_rel_mag * (v_rel_x * (v*np.sin(theta)) + v_rel_y*(-v*np.cos(theta)))/v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
+        # dh_dx[0, 3] = ego_dim**2 * ((p_rel_x * (-np.cos(theta)) + p_rel_y * (-np.sin(theta))) * p_rel_mag * v_rel_mag - rel_dot * p_rel_mag * (v_rel_x * (-np.cos(theta)) + v_rel_y * (-np.sin(theta)))/v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
+
         dh_dx = np.zeros((1, 4))
-        dh_dx[0, 0] = -2 * p_rel_x + ego_dim**2 * ((-v_rel_x) * p_rel_mag * v_rel_mag - rel_dot * (-p_rel_x)/p_rel_mag * v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
-        dh_dx[0, 1] = -2 * p_rel_y + ego_dim**2 * ((-v_rel_y) * p_rel_mag * v_rel_mag - rel_dot * (-p_rel_y)/p_rel_mag * v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
-        dh_dx[0, 2] = ego_dim**2 * ((p_rel_x * (v*np.sin(theta)) + p_rel_y * (-v*np.cos(theta)))* p_rel_mag * v_rel_mag - rel_dot * p_rel_mag * (v_rel_x * (v*np.sin(theta)) + v_rel_y*(-v*np.cos(theta)))/v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
-        dh_dx[0, 3] = ego_dim**2 * ((p_rel_x * (-np.cos(theta)) + p_rel_y * (-np.sin(theta))) * p_rel_mag * v_rel_mag - rel_dot * p_rel_mag * (v_rel_x * (-np.cos(theta)) + v_rel_y * (-np.sin(theta)))/v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
+    
+        if p_rel_dot_v_rel >= 0: # Separating: Delta_k = 0, h is simpler
+            dh_dx[0, 0] = -2 * p_rel[0, 0]
+            dh_dx[0, 1] = -2 * p_rel[1, 0]
+            # dh/d_theta and dh/d_v are 0
+        else: # Approaching: Delta_k > 0, use the full derivative
+            # The derivative you calculated is for the 'approaching' case.
+            # Let's use your original calculation here.
+            p_rel_x = p_rel[0, 0]
+            p_rel_y = p_rel[1, 0]
+            v_rel_x = v_rel[0, 0]
+            v_rel_y = v_rel[1, 0]
+
+            # Note: Your original h had (1 - ...), and 논문은 (1 + [-...]+).
+            # When p_rel_dot_v_rel < 0, (1 + delta_k) = (1 - cos_theta_pv).
+            # This matches the form of your calculation. So your dh_dx is correct for this case.
+            dh_dx[0, 0] = -2 * p_rel_x + ego_dim**2 * ((-v_rel_x) * p_rel_mag * v_rel_mag - p_rel_dot_v_rel * (-p_rel_x)/p_rel_mag * v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
+            dh_dx[0, 1] = -2 * p_rel_y + ego_dim**2 * ((-v_rel_y) * p_rel_mag * v_rel_mag - p_rel_dot_v_rel * (-p_rel_y)/p_rel_mag * v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
+            dh_dx[0, 2] = ego_dim**2 * ((p_rel_x * (v*np.sin(theta)) + p_rel_y * (-v*np.cos(theta)))* p_rel_mag * v_rel_mag - p_rel_dot_v_rel * p_rel_mag * (v_rel_x * (v*np.sin(theta)) + v_rel_y*(-v*np.cos(theta)))/v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
+            dh_dx[0, 3] = ego_dim**2 * ((p_rel_x * (-np.cos(theta)) + p_rel_y * (-np.sin(theta))) * p_rel_mag * v_rel_mag - p_rel_dot_v_rel * p_rel_mag * (v_rel_x * (-np.cos(theta)) + v_rel_y * (-np.sin(theta)))/v_rel_mag) / (p_rel_mag**2 * v_rel_mag**2)
 
         return h, dh_dx
 

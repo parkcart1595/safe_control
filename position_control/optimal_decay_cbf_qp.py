@@ -21,10 +21,10 @@ class OptimalDecayCBFQP:
 
         if self.robot_spec['model'] == 'KinematicBicycle2D_CBFVO':
             self.mode = 'cbfvo'
-            self.ku       = 2.0             # range in 0.5 ~ 5.0
-            self.kvo      = 80.0           # range in 20 ~ 1000
-            self.alpha_vo = 10.0
-            self.alpha_c  = 10.0
+            self.ku       = 10.0             # range in 0.5 ~ 5.0
+            self.kvo      = 100.0           # range in 20 ~ 1000
+            self.alpha_vo = 1.5
+            self.alpha_c  = 1.5
             # self.cbf_param = {}
             # self.cbf_param['alpha1'] = 0.5
             # self.cbf_param['omega1'] = 1.0  # Initial omega

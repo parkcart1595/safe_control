@@ -171,7 +171,7 @@ class KinematicBicycle2D:
         beta = k_theta * error_theta
         return np.array([0.0, beta]).reshape(-1, 1)
 
-    def agent_barrier(self, X, obs, robot_radius, beta=1.1):
+    def agent_barrier(self, X, obs, robot_radius, beta=1.0):
         '''Continuous Time High Order CBF'''
         obsX = obs[0:2].reshape(2,1)
         d_min = obs[2] + robot_radius  # obs radius + robot radius

@@ -12,7 +12,7 @@ class KinematicBicycle2D_C3BF(KinematicBicycle2D):
     def __init__(self, dt, robot_spec):
         super().__init__(dt, robot_spec)
 
-    def agent_barrier(self, X, obs, robot_radius, beta=1.1):
+    def agent_barrier(self, X, obs, robot_radius, beta=1.05):
         """
         '''Continuous Time C3BF'''
         Compute a Collision Cone Control Barrier Function for the Kinematic Bicycle2D.

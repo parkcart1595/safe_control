@@ -12,7 +12,7 @@ class KinematicBicycle2D_CBFVO(KinematicBicycle2D):
     def __init__(self, dt, robot_spec):
         super().__init__(dt, robot_spec)
 
-    def agent_barrier(self, X, obs, robot_radius, beta=1.1):
+    def agent_barrier(self, X, obs, robot_radius, beta=1.05):
         """
         '''Continuous Time C3BF'''
         Compute a Collision Cone Control Barrier Function for the Kinematic Bicycle2D.
@@ -87,10 +87,10 @@ class KinematicBicycle2D_CBFVO(KinematicBicycle2D):
             hx, hy, hth, hv = -p_hatx, -p_haty, 0.0, 0.0
 
         dh_dx = np.array([[hx, hy, hth, hv]])
-        
+
         return h, dh_dx
 
-    def agent_barrier_vo(self, X, obs, robot_radius, beta=1.0):
+    def agent_barrier_vo(self, X, obs, robot_radius, beta=1.05):
         """
         VO-guidance (soft): h_vo = p^T v_rel + ||p|| ||v_rel|| cos(phi)
         return: h_vo (scalar), dh_dx (1x4)

@@ -21,7 +21,7 @@ class KinematicBicycle2D_OVVO(KinematicBicycle2D):
 
     # --- Paste the two new barrier functions here ---
 
-    def clearance_barrier(self, X, obs, robot_radius, d_min=0.1, beta=1.1):
+    def clearance_barrier(self, X, obs, robot_radius, d_min=0.1, beta=1.05):
         """
         Computes a Clearance-based Control Barrier Function inspired by OVVO.
         """

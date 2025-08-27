@@ -144,7 +144,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 20 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 70 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -309,7 +309,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=20):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=70):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -695,7 +695,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'KinematicBicycle2D_OVVO' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     # waypoints = [
     #     [2, 2, math.pi/2],
@@ -721,7 +721,7 @@ def single_agent_main(control_type):
     #     [12, 2, 0]
     # ]
     waypoints = [
-         [2, 7.5, 0],
+         [9, 7.5, 0],
          [20, 7.5, 0],
     ]
     robot_x, robot_y = 11, 7.5
@@ -869,41 +869,30 @@ def single_agent_main(control_type):
             'model': model,
             'a_max': 5.0,
             # 'sensor': 'rgbd',
-            'radius': 0.4
+            'radius': 0.5
         }
-        num_obstacles = 8
-        initial_distance_from_robot = 5.0
+        num_obstacles = 10
+        initial_distance_from_robot = 5.5
         
         dynamic_obs = []
-        # 20개의 장애물에 대해 반복
         for i in range(num_obstacles):
-            # 1. 장애물의 초기 위치 계산 (원형 배치)
-            # 각도를 계산하여 장애물을 원 둘레에 고르게 배치합니다.
+
             angle = i * (2.0 * np.pi / num_obstacles)
             
-            # 로봇 위치를 기준으로 원의 좌표를 계산합니다.
             ox = robot_x + initial_distance_from_robot * np.cos(angle)
             oy = robot_y + initial_distance_from_robot * np.sin(angle)
 
-            # 2. 장애물의 속도 벡터 계산 (로봇 방향)
-            # 장애물 위치에서 로봇 위치로 향하는 방향 벡터를 구합니다.
             direction_vector_x = robot_x - ox
             direction_vector_y = robot_y - oy
             
-            # 방향 벡터의 크기(거리)를 계산합니다.
             magnitude = np.sqrt(direction_vector_x**2 + direction_vector_y**2)
             
-            # 방향 벡터를 정규화(normalize)하여 단위 벡터(크기가 1인 벡터)로 만들고,
-            # 여기에 원하는 속도를 곱해 최종 속도 벡터(vx, vy)를 구합니다.
-            # 이렇게 하면 모든 장애물이 동일한 속도로 로봇을 향하게 됩니다.
-            random_speed = np.random.uniform(0.8, 1.5)
+            random_speed = np.random.uniform(0.1, 0.5)
             vx = (direction_vector_x / magnitude) * random_speed
             vy = (direction_vector_y / magnitude) * random_speed
 
-            # 3. 최종 장애물 정보 리스트에 추가
-            # [x좌표, y좌표, 반지름, x속도, y속도, y최소, y최대]
             y_min, y_max = 0.0, 25.0
-            dynamic_obs.append([ox, oy, 1.0, vx, vy, y_min, y_max])
+            dynamic_obs.append([ox, oy, 0.7, vx, vy, y_min, y_max])
 
         # for i, obs_info in enumerate(known_obs):
         #     ox, oy, r = obs_info[:3]
@@ -1007,7 +996,7 @@ def single_agent_main(control_type):
                                                   control_type=control_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=True,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler, follow_view=False, view_size=(20.0, 20.0), view_smooth=1.0, lookahead=1.0, save_ext='png')
@@ -1105,24 +1094,24 @@ def run_experiments(control_type, num_trials=100):
     dt = 0.05
     
     model = 'KinematicBicycle2D_DPCBF' # KinematicBicycle2D_DPCBFC3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
-    waypoints = np.array([[3, 15, 0], [48, 15, 0]], dtype=np.float64)
+    waypoints = np.array([[3, 15, 0], [50, 15, 0]], dtype=np.float64)
     # waypoints = np.array([[20, 10, 0], [45, 10, 0]], dtype=np.float64)
     
     for trial in range(num_trials):
         # Generate random elements with a fixed seed
         # Generate random dynamic obstacles
-        num_obs = 30
-        obs_x = np.random.uniform(low=5, high=50, size=(num_obs, 1))
-        obs_y = np.random.uniform(low=3.0, high=27.0, size=(num_obs, 1))
-        obs_r = np.random.uniform(low=0.2, high=0.7, size=(num_obs, 1))
-        obs_vx = np.random.uniform(low=-0.8, high=0.8, size=(num_obs, 1))
-        obs_vy = np.random.uniform(low= -0.8, high=0.8, size=(num_obs, 1))
-        # num_obs = 100
-        # obs_x = np.random.uniform(low=10, high=40, size=(num_obs, 1))
-        # obs_y = np.random.uniform(low=3, high=17, size=(num_obs, 1))
-        # obs_r = np.random.uniform(low=0.4, high=0.5, size=(num_obs, 1))
-        # obs_vx = np.random.uniform(low=-0.5, high= 0.5, size=(num_obs, 1))
-        # obs_vy = np.random.uniform(low= -0.5, high= 0.5, size=(num_obs, 1))
+        # num_obs = 10
+        # obs_x = np.random.uniform(low=10, high=50, size=(num_obs, 1))
+        # obs_y = np.random.uniform(low=3.0, high=27.0, size=(num_obs, 1))
+        # obs_r = np.random.uniform(low=0.2, high=0.7, size=(num_obs, 1))
+        # obs_vx = np.random.uniform(low=-0.8, high=0.8, size=(num_obs, 1))
+        # obs_vy = np.random.uniform(low= -0.8, high=0.8, size=(num_obs, 1))
+        num_obs = 100
+        obs_x = np.random.uniform(low=8, high=45, size=(num_obs, 1))
+        obs_y = np.random.uniform(low=3, high=27, size=(num_obs, 1))
+        obs_r = np.random.uniform(low=0.1, high=0.5, size=(num_obs, 1))
+        obs_vx = np.random.uniform(low=-0.8, high= 0.8, size=(num_obs, 1))
+        obs_vy = np.random.uniform(low= -0.8, high= 0.8, size=(num_obs, 1))
         y_min_val, y_max_val = 1.0, 29.0
         y_min = np.full((num_obs, 1), y_min_val)
         y_max = np.full((num_obs, 1), y_max_val)
@@ -1156,7 +1145,7 @@ def run_experiments(control_type, num_trials=100):
                 'radius': 0.25
             }
 
-        env_width = 50.0
+        env_width = 55.0
         env_height = 30.0
 
         # If known_obs does not have 7 columns, pad it
@@ -1173,12 +1162,12 @@ def run_experiments(control_type, num_trials=100):
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=False,
-                                                    save_animation=False,
+                                                    show_animation=True,
+                                                    save_animation=True,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
                                                     env=env_handler, trial_folder=trial_folder,
-                                                    follow_view=True, view_size=(20.0, 15.0), view_smooth=0.25, lookahead=1.0, save_ext='svg')
+                                                    follow_view=True, view_size=(25.0, 15.0), view_smooth=0.25, lookahead=1.0, save_ext='svg')
         tracking_controller.obs = known_obs
         tracking_controller.set_waypoints(waypoints)
 
