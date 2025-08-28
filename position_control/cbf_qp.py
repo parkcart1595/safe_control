@@ -238,5 +238,10 @@ class CBFQP:
 
             # if self.cbf_controller.status != 'optimal':
             #     raise QPError("CBF-QP optimization failed")
-
-            return self.u.value
+            # if self.status in ['optimal', 'optimal_inaccurate']:
+            #     return  self.u.value, self.cbf_controller.value 
+            # else:
+            #     # If QP fails, return the nominal control and an infinite cost as a penalty.
+            #     return self.u_ref.value, np.inf
+            return  self.u.value, self.cbf_controller.value 
+            # return self.u.value

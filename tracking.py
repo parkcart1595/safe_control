@@ -144,7 +144,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 70 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 30 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -309,7 +309,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=70):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=30):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -569,8 +569,10 @@ class LocalTrackingController:
         control_ref = {'state_machine': self.state_machine,
                        'u_ref': u_ref,
                        'goal': self.goal}
+        
+        u, step_cost = (None, 0.0) # Initialize
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
-            u = self.pos_controller.solve_control_problem(
+            u, step_cost = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
             if self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'DynamicUnicycle2D_DPCBF']:
                 self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
@@ -594,7 +596,7 @@ class LocalTrackingController:
             print(f"{cause} detected !!")
             if self.raise_error:
                 raise InfeasibleError(f"{cause} detected !!")
-            return -2
+            return -2, step_cost
 
         # 8. Step the robot
         self.robot.step(u, self.u_att)
@@ -615,9 +617,9 @@ class LocalTrackingController:
             beyond_flag = 0 # not checking sensing footprint
 
         if self.goal is None and self.state_machine != 'stop':
-            return -1  # all waypoints reached
+            return -1, step_cost  # all waypoints reached
         else: 
-            return 0
+            return 0, step_cost
         # return beyond_flag
 
     def draw_infeasible(self):
@@ -673,14 +675,29 @@ class LocalTrackingController:
         print("Start following the generated path.")
          # unexpected_beh = 0
 
-        ret = None
+        total_intervention_cost = 0.0
+        final_status = 1
+        # ret = None
         
         for _ in range(int(tf / self.dt)):
-            ret = self.control_step()
+            status, step_cost = self.control_step()
+            # ret = self.control_step()
+            if np.isinf(step_cost):
+                final_status = 1 # Mark as infeasible
+                total_intervention_cost = np.inf
+                break
+            total_intervention_cost += step_cost * self.dt
+
             self.draw_plot()
             # unexpected_beh += ret
-            if ret == -1:  # all waypoints reached
+            if status == -1:  # all waypoints reached
+                final_status = -1 # Mark as success
                 break
+            elif status == -2: # Infeasible error handled inside control_step
+                final_status = 1 # Mark as infeasible
+                break
+            # if ret == -1:  # all waypoints reached
+            #     break
 
         self.export_video()
 
@@ -691,11 +708,11 @@ class LocalTrackingController:
             plt.ioff()
             plt.close()
 
-        return ret
+        return final_status, total_intervention_cost
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'KinematicBicycle2D_C3BF' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     # waypoints = [
     #     [2, 2, math.pi/2],
@@ -1091,9 +1108,10 @@ def run_experiments(control_type, num_trials=100):
     mpl.rcParams['path.simplify_threshold'] = 0.1
 
     outcomes ={"reach_goal": 0, "collision": 0, "infeasible": 0}
+    successful_costs = []
     dt = 0.05
     
-    model = 'KinematicBicycle2D_DPCBF' # KinematicBicycle2D_DPCBFC3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
+    model = 'KinematicBicycle2D_C3BF' # KinematicBicycle2D_DPCBFC3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
     waypoints = np.array([[3, 15, 0], [50, 15, 0]], dtype=np.float64)
     # waypoints = np.array([[20, 10, 0], [45, 10, 0]], dtype=np.float64)
     
@@ -1106,10 +1124,10 @@ def run_experiments(control_type, num_trials=100):
         # obs_r = np.random.uniform(low=0.2, high=0.7, size=(num_obs, 1))
         # obs_vx = np.random.uniform(low=-0.8, high=0.8, size=(num_obs, 1))
         # obs_vy = np.random.uniform(low= -0.8, high=0.8, size=(num_obs, 1))
-        num_obs = 100
+        num_obs = 50
         obs_x = np.random.uniform(low=8, high=45, size=(num_obs, 1))
         obs_y = np.random.uniform(low=3, high=27, size=(num_obs, 1))
-        obs_r = np.random.uniform(low=0.1, high=0.5, size=(num_obs, 1))
+        obs_r = np.random.uniform(low=0.1, high=0.3, size=(num_obs, 1))
         obs_vx = np.random.uniform(low=-0.8, high= 0.8, size=(num_obs, 1))
         obs_vy = np.random.uniform(low= -0.8, high= 0.8, size=(num_obs, 1))
         y_min_val, y_max_val = 1.0, 29.0
@@ -1162,8 +1180,8 @@ def run_experiments(control_type, num_trials=100):
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=True,
-                                                    save_animation=True,
+                                                    show_animation=False,
+                                                    save_animation=False,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
                                                     env=env_handler, trial_folder=trial_folder,
@@ -1171,37 +1189,112 @@ def run_experiments(control_type, num_trials=100):
         tracking_controller.obs = known_obs
         tracking_controller.set_waypoints(waypoints)
 
+        # try:
+        #     ret = tracking_controller.run_all_steps(tf=100)
+        #     # ret == -1 indicates successful goal reach
+        #     if ret == -1:
+        #         outcomes["reach_goal"] += 1
+        #     else:
+        #         outcomes["infeasible"] += 1
+        # except InfeasibleError as e:
+        #     if "Collision" in str(e):
+        #         outcomes["collision"] += 1
+        #     else:
+        #         outcomes["infeasible"] += 1
+        # except Exception as e:
+        #     outcomes["collision"] += 1
+
+        # # tracking_controller.export_video()
+        # plt.close(fig)  # Close the figure to manage memory
+        # print("Experiment Outcomes:", outcomes)
+
         try:
-            ret = tracking_controller.run_all_steps(tf=100)
-            # ret == -1 indicates successful goal reach
+            # <<< MODIFIED: run_all_steps now returns status and total_cost
+            ret, total_cost = tracking_controller.run_all_steps(tf=100)
+            
             if ret == -1:
                 outcomes["reach_goal"] += 1
+                successful_costs.append(total_cost) # <<< ADDED: Store cost on success
+                print(f"Trial {trial + 1} Result: Goal Reached. Cost: {total_cost:.4f}")
             else:
                 outcomes["infeasible"] += 1
+                print(f"Trial {trial + 1} Result: Infeasible/Timeout.")
+
         except InfeasibleError as e:
             if "Collision" in str(e):
                 outcomes["collision"] += 1
+                print(f"Trial {trial + 1} Result: Collision.")
             else:
                 outcomes["infeasible"] += 1
+                print(f"Trial {trial + 1} Result: Infeasible Error.")
         except Exception as e:
             outcomes["collision"] += 1
+            print(f"Trial {trial + 1} Result: Failed with exception: {e}")
 
-        # tracking_controller.export_video()
-        plt.close(fig)  # Close the figure to manage memory
-        print("Experiment Outcomes:", outcomes)
+        plt.close(fig)
+        print("Current Outcomes:", outcomes)
 
+    print("\n\n--- FINAL EXPERIMENT RESULTS ---")
+    print("Outcomes:", outcomes)
 
+    if successful_costs:
+        costs_array = np.array(successful_costs)
+        
+        mean_cost = np.mean(costs_array)
+        min_cost = np.min(costs_array)
+        max_cost = np.max(costs_array)
+        # average_cost = np.mean(successful_costs)
+        # success_rate = outcomes["reach_goal"] / num_trials * 100
+        # print(f"Success Rate: {outcomes['reach_goal']}/{num_trials} ({success_rate:.1f}%)")
+        # print(f"Average Intervention Cost (for successful trials): {average_cost:.4f}")
+        q1 = np.percentile(costs_array, 25)
+        median_cost = np.percentile(costs_array, 50) # Q2
+        q3 = np.percentile(costs_array, 75)
+        iqr = q3 - q1
+
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        outliers = costs_array[(costs_array < lower_bound) | (costs_array > upper_bound)]
+
+        success_rate = outcomes["reach_goal"] / num_trials * 100
+        print(f"Success Rate: {outcomes['reach_goal']}/{num_trials} ({success_rate:.1f}%)")
+        print("\n--- Cost Statistics (for successful trials) ---")
+        print(f"Mean (Average) Cost: {mean_cost:.4f}")
+        print(f"Median (Q2) Cost:    {median_cost:.4f}")
+        print(f"Minimum Cost:          {min_cost:.4f}")
+        print(f"Maximum Cost:          {max_cost:.4f}")
+        print(f"Q1 (25th percentile):  {q1:.4f}")
+        print(f"Q3 (75th percentile):  {q3:.4f}")
+        print(f"IQR (Q3 - Q1):         {iqr:.4f}")
+        
+        if len(outliers) > 0:
+            print(f"Outliers detected:     {np.round(outliers, 4)}")
+        else:
+            print("Outliers detected:     None")
+
+    else:
+        print("No trials were successful. Cannot compute average cost.")
+
+    # total = sum(outcomes.values())
+    # percentages = {k: 100 * v / total for k, v in outcomes.items()}
+
+    # plt.figure()
+    # plt.bar(percentages.keys(), percentages.values())
+    # plt.title(f"CBF Experiment Results ({num_trials} Trials, seed=42)")
+    # plt.ylabel("Percentage (%)")
+    # plt.grid(True)
+    # plt.show()
+
+    # print("Experiment Outcomes:", outcomes)
     total = sum(outcomes.values())
-    percentages = {k: 100 * v / total for k, v in outcomes.items()}
-
-    plt.figure()
-    plt.bar(percentages.keys(), percentages.values())
-    plt.title(f"CBF Experiment Results ({num_trials} Trials, seed=42)")
-    plt.ylabel("Percentage (%)")
-    plt.grid(True)
-    plt.show()
-
-    print("Experiment Outcomes:", outcomes)
+    if total > 0:
+        percentages = {k: 100 * v / total for k, v in outcomes.items()}
+        plt.figure()
+        plt.bar(percentages.keys(), percentages.values())
+        plt.title(f"CBF Experiment Results ({num_trials} Trials, seed=42)")
+        plt.ylabel("Percentage (%)")
+        plt.grid(True)
+        plt.show()
 
 if __name__ == "__main__":
     from utils import plotting
