@@ -21,8 +21,8 @@ class OptimalDecayCBFQP:
 
         if self.robot_spec['model'] == 'KinematicBicycle2D_CBFVO':
             self.mode = 'cbfvo'
-            self.ku       = 10.0             # range in 0.5 ~ 5.0
-            self.kvo      = 100.0           # range in 20 ~ 1000
+            self.ku       = 1.0             # range in 0.5 ~ 5.0
+            self.kvo      = 1.0           # range in 20 ~ 1000
             self.alpha_vo = 1.5
             self.alpha_c  = 1.5
             # self.cbf_param = {}
@@ -223,4 +223,4 @@ class OptimalDecayCBFQP:
         self.cbf_controller.solve(solver=cp.GUROBI)
         self.status = self.cbf_controller.status
         
-        return self.u.value
+        return self.u.value, self.cbf_controller.value

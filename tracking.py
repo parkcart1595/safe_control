@@ -144,7 +144,7 @@ class LocalTrackingController:
         # Setup control problem
         self.setup_robot(X0)
         self.control_type = control_type
-        self.num_constraints = 30 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 70 # number of max obstacle constraints to consider in the controller
         if control_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -309,7 +309,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=30):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=70):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''
@@ -1111,7 +1111,7 @@ def run_experiments(control_type, num_trials=100):
     successful_costs = []
     dt = 0.05
     
-    model = 'KinematicBicycle2D_C3BF' # KinematicBicycle2D_DPCBFC3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
+    model = 'KinematicBicycle2D_DPCBF' # KinematicBicycle2D_DPCBFC3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
     waypoints = np.array([[3, 15, 0], [50, 15, 0]], dtype=np.float64)
     # waypoints = np.array([[20, 10, 0], [45, 10, 0]], dtype=np.float64)
     
@@ -1124,10 +1124,10 @@ def run_experiments(control_type, num_trials=100):
         # obs_r = np.random.uniform(low=0.2, high=0.7, size=(num_obs, 1))
         # obs_vx = np.random.uniform(low=-0.8, high=0.8, size=(num_obs, 1))
         # obs_vy = np.random.uniform(low= -0.8, high=0.8, size=(num_obs, 1))
-        num_obs = 50
+        num_obs = 100
         obs_x = np.random.uniform(low=8, high=45, size=(num_obs, 1))
         obs_y = np.random.uniform(low=3, high=27, size=(num_obs, 1))
-        obs_r = np.random.uniform(low=0.1, high=0.3, size=(num_obs, 1))
+        obs_r = np.random.uniform(low=0.1, high=0.7, size=(num_obs, 1))
         obs_vx = np.random.uniform(low=-0.8, high= 0.8, size=(num_obs, 1))
         obs_vy = np.random.uniform(low= -0.8, high= 0.8, size=(num_obs, 1))
         y_min_val, y_max_val = 1.0, 29.0
@@ -1136,6 +1136,9 @@ def run_experiments(control_type, num_trials=100):
         known_obs = np.hstack((obs_x, obs_y, obs_r, obs_vx, obs_vy, y_min, y_max))
         known_obs[:, :2] += 0
 
+        if trial != 89:
+            continue
+        
         # For Kinematic Bicycle
         if model in ['KinematicBicycle2D', 'KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'KinematicBicycle2D_CBFVO', 'KinematicBicycle2D_OVVO', 'KinematicBicycle2D_CVAR']:
             x_init = np.append(waypoints[0], 0.5)
@@ -1163,7 +1166,7 @@ def run_experiments(control_type, num_trials=100):
                 'radius': 0.25
             }
 
-        env_width = 55.0
+        env_width = 60.0
         env_height = 30.0
 
         # If known_obs does not have 7 columns, pad it
@@ -1180,8 +1183,8 @@ def run_experiments(control_type, num_trials=100):
         tracking_controller = LocalTrackingController(x_init, robot_spec,
                                                     control_type=control_type,
                                                     dt=dt,
-                                                    show_animation=False,
-                                                    save_animation=False,
+                                                    show_animation=True,
+                                                    save_animation=True,
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
                                                     env=env_handler, trial_folder=trial_folder,
