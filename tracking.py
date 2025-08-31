@@ -52,6 +52,9 @@ class LocalTrackingController:
         self.dt = dt
         self.trial_folder = trial_folder
 
+        self.trajectory_points = []
+        self.trajectory_velocities = []
+
         self.state_machine = 'idle'  # Can be 'idle', 'track', 'stop', 'rotate'
         self.rotation_threshold = 0.1  # Radians
 
@@ -128,6 +131,14 @@ class LocalTrackingController:
         self.fig = fig
         self.obs = np.array(env.obs_circle)
 
+        # Create a list to hold the arrow patches for obstacle velocities
+        self.obs_vel_arrows = []
+        if self.obs.shape[0] > 0 and self.obs.shape[1] >= 5: # Make sure there are obstacles with velocity info
+            for _ in range(len(self.obs)):
+                arrow = patches.Arrow(0, 0, 0, 0, width=0.1, color='orange')
+                self.ax.add_patch(arrow)
+                self.obs_vel_arrows.append(arrow)
+
         # Initialize moving obstacles
         self.dyn_obs_patch = None # will be initialized after the first step
         self.init_obs_info = None
@@ -162,6 +173,22 @@ class LocalTrackingController:
             from attitude_control.simple_attitude import SimpleAttitude
             self.att_controller = SimpleAttitude(self.robot, self.robot_spec)
         self.goal = None
+
+        # Draw Trajectory
+        initial_pos = self.robot.get_position()
+        initial_vel = self.robot.get_velocity()
+        self.trajectory_points.append(initial_pos)
+        self.trajectory_velocities.append(initial_vel)
+
+        # QP Plot for one sim
+        self.history = {
+            'time': [],
+            'qp_cost': [],
+            'control_error': [],
+            'acceleration': [],
+            'steering': []
+        }
+        self.current_time = 0.0
 
     def setup_animation_saving(self):
         # self.current_directory_path = os.getcwd()
@@ -413,11 +440,39 @@ class LocalTrackingController:
                     self.obs[i, 4] = abs(self.obs[i, 4])   # flip to positive
     
     def render_dyn_obs(self):
+
+        if len(self.obs_vel_arrows) != len(self.obs):
+            for arrow in self.obs_vel_arrows:
+                arrow.remove()
+            self.obs_vel_arrows = []
+            
+            if self.obs.shape[0] > 0 and self.obs.shape[1] >= 5:
+                for _ in range(len(self.obs)):
+                    arrow = patches.Arrow(0, 0, 0, 0, width=0.2, color='orange', zorder=5)
+                    self.ax.add_patch(arrow)
+                    self.obs_vel_arrows.append(arrow)
+
         for i, obs_info in enumerate(self.obs):
             # obs: [x, y, r, vx, vy]
             ox, oy, r = obs_info[:3]
             self.dyn_obs_patch[i].center = ox, oy
             self.dyn_obs_patch[i].set_radius(r)
+
+            # Check if there are arrows to update
+            if i < len(self.obs_vel_arrows):
+                vx, vy = obs_info[3], obs_info[4]
+                
+                # Remove the old arrow and add a new one to update its properties
+                # This is a robust way to handle patches in matplotlib animations
+                self.obs_vel_arrows[i].remove()
+                
+                # You can scale the vector length for better visualization, e.g., multiply by 0.5
+                arrow_scale = 2.0 
+                new_arrow = patches.Arrow(ox, oy, vx * arrow_scale, vy * arrow_scale, 
+                                          width=0.2, color='orange', zorder=5)
+                
+                self.ax.add_patch(new_arrow)
+                self.obs_vel_arrows[i] = new_arrow
 
         # for i, obs_info in enumerate(self.init_obs_info):
         #     ox, oy, r = obs_info[:3]
@@ -504,6 +559,33 @@ class LocalTrackingController:
             
             self.render_dyn_obs()
 
+            ################################ Drawing trajectory with Velocity######################
+            from matplotlib.collections import LineCollection
+            from matplotlib.colors import Normalize
+            import matplotlib.cm as cm
+
+            if len(self.trajectory_points) > 1:
+                points = np.array(self.trajectory_points).reshape(-1, 1, 2)
+                segments = np.concatenate([points[:-1], points[1:]], axis=1)
+                
+                velocities = np.array(self.trajectory_velocities)
+                segment_velocities = (velocities[:-1] + velocities[1:]) / 2.0
+                
+                cmap = cm.get_cmap('Reds')
+                
+                v_max = self.robot_spec.get('v_max', 2.0)
+                norm = Normalize(vmin=0, vmax=v_max)
+                
+                lc = LineCollection(segments, cmap=cmap, norm=norm)
+                
+                lc.set_array(segment_velocities)
+                lc.set_linewidth(3)
+
+                if hasattr(self, 'trajectory_line'):
+                    self.trajectory_line.remove()
+                
+                self.trajectory_line = self.ax.add_collection(lc)
+
             self._update_follow_view()
 
             self.fig.canvas.draw_idle()
@@ -574,6 +656,16 @@ class LocalTrackingController:
         if self.control_type == 'optimal_decay_cbf_qp' or self.control_type == 'cbf_qp':
             u, step_cost = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
+            if u is not None and u_ref is not None and self.pos_controller.cbf_controller.value is not None:
+                # The QP cost is ||u - u_ref||^2, which is returned by the solver
+                qp_cost_value = self.pos_controller.cbf_controller.value
+                
+                # Append the current time and the calculated cost to our history lists
+                self.history['time'].append(self.current_time)
+                self.history['qp_cost'].append(qp_cost_value)
+
+                self.history['acceleration'].append(u[0, 0])
+                self.history['steering'].append(u[1, 0])
             if self.robot_spec['model'] in ['KinematicBicycle2D_C3BF', 'KinematicBicycle2D_DPCBF', 'DoubleIntegrator2D_DPCBF', 'DynamicUnicycle2D_DPCBF']:
                 self.robot.draw_collision_quad(self.robot.X, self.nearest_multi_obs, self.ax)
                 self.robot.draw_collision_cone(self.robot.X, self.nearest_multi_obs, self.ax)
@@ -600,6 +692,11 @@ class LocalTrackingController:
 
         # 8. Step the robot
         self.robot.step(u, self.u_att)
+
+        current_pos = self.robot.get_position()
+        current_vel = self.robot.get_velocity()
+        self.trajectory_points.append(current_pos)
+        self.trajectory_velocities.append(current_vel)
     
         if self.show_animation:
             self.robot.render_plot()
@@ -653,6 +750,44 @@ class LocalTrackingController:
             for file_name in glob.glob(os.path.join(self.save_folder, "*.png")):
                 os.remove(file_name)
 
+    def plot_cost_history(self):
+        if not self.history['time']:
+            print("No history to plot.")
+            return
+
+        fig, ax1 = plt.subplots(figsize=(12, 6))
+
+        color = 'tab:red'
+        ax1.set_xlabel("Time (s)")
+        ax1.set_ylabel("QP Cost", color=color)
+        ax1.plot(self.history['time'], self.history['qp_cost'], 
+                 label='$||u - u_{ref}||^2$ (QP Cost)', color=color)
+        ax1.tick_params(axis='y', labelcolor=color)
+        ax1.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+        ax2 = ax1.twinx()
+        color = 'tab:blue'
+        ax2.set_ylabel('Control Inputs', color=color)
+        ax2.plot(self.history['time'], self.history['acceleration'], 
+                 label='Acceleration $a$', color='tab:blue', linestyle='--')
+        ax2.plot(self.history['time'], self.history['steering'], 
+                 label='Steering $\\beta$', color='tab:green', linestyle='-.')
+        ax2.tick_params(axis='y', labelcolor=color)
+
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+        
+        fig.tight_layout()
+        plt.title("Controller Performance: QP Cost and Inputs")
+
+        if self.trial_folder:
+            plot_path = os.path.join(self.trial_folder, "controller_performance_history.svg")
+            fig.savefig(plot_path)
+            print(f"Performance history plot saved to {plot_path}")
+
+        plt.show()
+
     # # If the 'upper' function is not compatible with your device, please use the function provided below
     # def export_video(self):
     #     # convert the image sequence to a video
@@ -679,7 +814,8 @@ class LocalTrackingController:
         final_status = 1
         # ret = None
         
-        for _ in range(int(tf / self.dt)):
+        for i in range(int(tf / self.dt)):
+            self.current_time = i * self.dt
             status, step_cost = self.control_step()
             # ret = self.control_step()
             if np.isinf(step_cost):
@@ -700,6 +836,7 @@ class LocalTrackingController:
             #     break
 
         self.export_video()
+        self.plot_cost_history()
 
         print("=====   Tracking finished    =====")
         print("===================================\n")
@@ -1016,7 +1153,7 @@ def single_agent_main(control_type):
                                                   save_animation=True,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
-                                                  env=env_handler, follow_view=False, view_size=(20.0, 20.0), view_smooth=1.0, lookahead=1.0, save_ext='png')
+                                                  env=env_handler, follow_view=False, view_size=(20.0, 10.0), view_smooth=1.0, lookahead=1.0, save_ext='svg')
 
     # Set obstacles
     tracking_controller.obs = known_obs
@@ -1188,7 +1325,7 @@ def run_experiments(control_type, num_trials=100):
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
                                                     env=env_handler, trial_folder=trial_folder,
-                                                    follow_view=True, view_size=(25.0, 15.0), view_smooth=0.25, lookahead=1.0, save_ext='svg')
+                                                    follow_view=True, view_size=(20.0, 12.0), view_smooth=0.25, lookahead=1.0, save_ext='svg')
         tracking_controller.obs = known_obs
         tracking_controller.set_waypoints(waypoints)
 
@@ -1305,9 +1442,9 @@ if __name__ == "__main__":
     import math
 
     # run_experiments('optimal_decay_cbf_qp', num_trials=100)
-    run_experiments('cbf_qp', num_trials=100)
+    # run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
-    # single_agent_main('cbf_qp')
+    single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')
