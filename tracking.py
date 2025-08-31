@@ -209,11 +209,26 @@ class LocalTrackingController:
         self.ani_idx = 0
 
     def setup_animation_plot(self):
+        VIDEO_WIDTH = 1920
+        VIDEO_HEIGHT = 982
+        DPI = 100  # 해상도 (값을 조정하여 figsize를 바꿀 수 있음)
+
+        # 목표 픽셀에 맞는 figsize 계산 (인치 단위)
+        fig_width_in = VIDEO_WIDTH / DPI
+        fig_height_in = VIDEO_HEIGHT / DPI
+        
         # Initialize plotting
-        if self.ax is None:
-            self.ax = plt.axes()
         if self.fig is None:
-            self.fig = plt.figure()
+            # 여기서 figsize과 dpi를 명시적으로 지정합니다.
+            self.fig = plt.figure(figsize=(fig_width_in, fig_height_in), dpi=DPI)
+        if self.ax is None:
+            self.ax = self.fig.add_subplot(111)
+
+        # # Initialize plotting
+        # if self.ax is None:
+        #     self.ax = plt.axes()
+        # if self.fig is None:
+        #     self.fig = plt.figure()
         plt.ion()
         self.ax.set_xlabel("X [m]")
         if self.robot_spec['model'] in ['Quad2D', 'VTOL2D']:
@@ -598,7 +613,7 @@ class LocalTrackingController:
                     frame_idx = self.ani_idx // self.save_per_frame
                     fname = os.path.join(self.save_folder, f"t_step_{frame_idx:04d}.{self.save_ext}")
 
-                    self.fig.savefig(fname, format=self.save_ext, bbox_inches='tight')
+                    self.fig.savefig(fname, format=self.save_ext)
 
 
     def control_step(self):
