@@ -243,5 +243,5 @@ class CBFQP:
             # else:
             #     # If QP fails, return the nominal control and an infinite cost as a penalty.
             #     return self.u_ref.value, np.inf
-            return  self.u.value, self.cbf_controller.value 
+            return  self.u.value, self.cbf_controller.value
             # return self.u.value

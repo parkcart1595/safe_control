@@ -210,8 +210,8 @@ class LocalTrackingController:
 
     def setup_animation_plot(self):
         VIDEO_WIDTH = 1920
-        VIDEO_HEIGHT = 982
-        DPI = 100  # 해상도 (값을 조정하여 figsize를 바꿀 수 있음)
+        VIDEO_HEIGHT = 1080
+        DPI = 1  # 해상도 (값을 조정하여 figsize를 바꿀 수 있음)
 
         # 목표 픽셀에 맞는 figsize 계산 (인치 단위)
         fig_width_in = VIDEO_WIDTH / DPI
@@ -482,7 +482,7 @@ class LocalTrackingController:
                 self.obs_vel_arrows[i].remove()
                 
                 # You can scale the vector length for better visualization, e.g., multiply by 0.5
-                arrow_scale = 2.0 
+                arrow_scale = 1.0 
                 new_arrow = patches.Arrow(ox, oy, vx * arrow_scale, vy * arrow_scale, 
                                           width=0.2, color='orange', zorder=5)
                 
@@ -759,7 +759,7 @@ class LocalTrackingController:
             subprocess.call(['ffmpeg',
                              '-framerate', '30',  # Input framerate (조정 가능)
                              '-i', os.path.join(self.save_folder, "t_step_%04d.png"),
-                             '-vf', 'scale=1920:982,fps=60',  # 출력 영상 설정
+                             '-vf', 'scale=1920:1080,fps=60',  # 출력 영상 설정
                              '-pix_fmt', 'yuv420p',
                              os.path.join(self.save_folder, "tracking.mp4")])
             for file_name in glob.glob(os.path.join(self.save_folder, "*.png")):
@@ -1340,7 +1340,7 @@ def run_experiments(control_type, num_trials=100):
                                                     show_mpc_traj=False,
                                                     ax=ax, fig=fig,
                                                     env=env_handler, trial_folder=trial_folder,
-                                                    follow_view=True, view_size=(20.0, 12.0), view_smooth=0.25, lookahead=1.0, save_ext='svg')
+                                                    follow_view=True, view_size=(20.0, 12.0), view_smooth=0.25, lookahead=1.0, save_ext='png')
         tracking_controller.obs = known_obs
         tracking_controller.set_waypoints(waypoints)
 
@@ -1457,9 +1457,9 @@ if __name__ == "__main__":
     import math
 
     # run_experiments('optimal_decay_cbf_qp', num_trials=100)
-    # run_experiments('cbf_qp', num_trials=100)
+    run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
-    single_agent_main('cbf_qp')
+    # single_agent_main('cbf_qp')
     # single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')
