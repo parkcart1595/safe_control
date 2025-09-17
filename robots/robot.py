@@ -734,7 +734,7 @@ class BaseRobot:
             eps = 1e-6
             d_safe = np.maximum(p_rel_mag**2 - ego_dim**2, eps)
             # Penalty term
-            k_lambda, k_mu = 0.26 * np.sqrt(beta**2 - 1)/ego_dim, 0.6 * np.sqrt(beta**2 - 1)/ego_dim
+            k_lambda, k_mu = 1.1 * np.sqrt(beta**2 - 1)/ego_dim, 1.1 * np.sqrt(beta**2 - 1)/ego_dim
 
             func_lambda = k_lambda * np.sqrt(d_safe) / v_rel_mag # same as 1/tan(phi)
             func_mu = k_mu * np.sqrt(d_safe)

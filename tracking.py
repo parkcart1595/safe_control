@@ -610,10 +610,15 @@ class LocalTrackingController:
                 self.ani_idx += 1
                 if force_save or self.ani_idx % self.save_per_frame == 0:
                     # plt.savefig(os.path.join(self.save_folder, "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png"))
+                    # frame_idx = self.ani_idx // self.save_per_frame
+                    # fname = os.path.join(self.save_folder, f"t_step_{frame_idx:04d}.{self.save_ext}")
+                    # plt.savefig(self.current_directory_path +
+                    #             "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png", dpi=300)
                     frame_idx = self.ani_idx // self.save_per_frame
-                    fname = os.path.join(self.save_folder, f"t_step_{frame_idx:04d}.{self.save_ext}")
-
-                    self.fig.savefig(fname, format=self.save_ext)
+                    filename = f"t_step_{frame_idx:04d}.png"
+                    save_path = os.path.join(self.save_folder, filename)
+                    plt.savefig(save_path, dpi=300)
+                    # self.fig.savefig(fname, format=self.save_ext)
 
 
     def control_step(self):
@@ -829,29 +834,31 @@ class LocalTrackingController:
         final_status = 1
         # ret = None
         
-        for i in range(int(tf / self.dt)):
-            self.current_time = i * self.dt
-            status, step_cost = self.control_step()
-            # ret = self.control_step()
-            if np.isinf(step_cost):
-                final_status = 1 # Mark as infeasible
-                total_intervention_cost = np.inf
-                break
-            total_intervention_cost += step_cost * self.dt
+        try:
+            for i in range(int(tf / self.dt)):
+                self.current_time = i * self.dt
+                status, step_cost = self.control_step()
+                # ret = self.control_step()
+                if np.isinf(step_cost):
+                    final_status = 1 # Mark as infeasible
+                    total_intervention_cost = np.inf
+                    break
+                total_intervention_cost += step_cost * self.dt
 
-            self.draw_plot()
-            # unexpected_beh += ret
-            if status == -1:  # all waypoints reached
-                final_status = -1 # Mark as success
-                break
-            elif status == -2: # Infeasible error handled inside control_step
-                final_status = 1 # Mark as infeasible
-                break
-            # if ret == -1:  # all waypoints reached
-            #     break
+                self.draw_plot()
+                # unexpected_beh += ret
+                if status == -1:  # all waypoints reached
+                    final_status = -1 # Mark as success
+                    break
+                elif status == -2: # Infeasible error handled inside control_step
+                    final_status = 1 # Mark as infeasible
+                    break
+                # if ret == -1:  # all waypoints reached
+                #     break
 
-        self.export_video()
-        self.plot_cost_history()
+        finally:
+            self.export_video()
+            # self.plot_cost_history()
 
         print("=====   Tracking finished    =====")
         print("===================================\n")
@@ -864,7 +871,7 @@ class LocalTrackingController:
 
 def single_agent_main(control_type):
     dt = 0.05
-    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'KinematicBicycle2D_CBFVO' # SingleIntegrator2D, DynamicUnicycle2D, DynamicUnicycle2D_C3BF, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     # waypoints = [
     #     [2, 2, math.pi/2],
@@ -1263,7 +1270,7 @@ def run_experiments(control_type, num_trials=100):
     successful_costs = []
     dt = 0.05
     
-    model = 'KinematicBicycle2D_DPCBF' # KinematicBicycle2D_DPCBFC3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
+    model = 'KinematicBicycle2D_CBFVO' # KinematicBicycle2D_DPCBFC3BF, KinematicBicycle2D_DPCBF, DoubleIntegrator2D_DPCBF, DynamicUnicycle2D_C3BF, DynamicUnicycle2D_DPCBF
     waypoints = np.array([[3, 15, 0], [50, 15, 0]], dtype=np.float64)
     # waypoints = np.array([[20, 10, 0], [45, 10, 0]], dtype=np.float64)
     
@@ -1279,7 +1286,7 @@ def run_experiments(control_type, num_trials=100):
         num_obs = 100
         obs_x = np.random.uniform(low=8, high=45, size=(num_obs, 1))
         obs_y = np.random.uniform(low=3, high=27, size=(num_obs, 1))
-        obs_r = np.random.uniform(low=0.1, high=0.7, size=(num_obs, 1))
+        obs_r = np.random.uniform(low=0.1, high=0.3, size=(num_obs, 1))
         obs_vx = np.random.uniform(low=-0.8, high= 0.8, size=(num_obs, 1))
         obs_vy = np.random.uniform(low= -0.8, high= 0.8, size=(num_obs, 1))
         y_min_val, y_max_val = 1.0, 29.0
@@ -1288,7 +1295,7 @@ def run_experiments(control_type, num_trials=100):
         known_obs = np.hstack((obs_x, obs_y, obs_r, obs_vx, obs_vy, y_min, y_max))
         known_obs[:, :2] += 0
 
-        if trial != 89:
+        if trial != 74:
             continue
         
         # For Kinematic Bicycle
@@ -1457,9 +1464,9 @@ if __name__ == "__main__":
     import math
 
     # run_experiments('optimal_decay_cbf_qp', num_trials=100)
-    run_experiments('cbf_qp', num_trials=100)
+    # run_experiments('cbf_qp', num_trials=100)
     # single_agent_main('mpc_cbf')
     # multi_agent_main('mpc_cbf', save_animation=True)
     # single_agent_main('cbf_qp')
-    # single_agent_main('optimal_decay_cbf_qp')
+    single_agent_main('optimal_decay_cbf_qp')
     # single_agent_main('optimal_decay_mpc_cbf')
