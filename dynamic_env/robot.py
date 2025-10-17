@@ -224,5 +224,3 @@ class BaseRobotDyn(BaseRobot):
                             float(x_offset * v_rel_offset[0]), float(y_offset * v_rel_offset[1]),
                             color=colors[i], width=0.02, alpha=1.0)
             self.rel_vel_patches.append(arrow)
-
-             
