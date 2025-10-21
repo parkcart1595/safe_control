@@ -173,3 +173,78 @@ class DoubleIntegrator2D:
         # hocbf_2nd_order = h_ddot + (gamma1 + gamma2) * h_dot + (gamma1 * gamma2) * h_k
 
         return h_k, d_h, dd_h
+    
+    #### Backup CBF ####
+    
+    def backup_input(self, X, k_a=1.0):
+        """
+        Using stop() function as backup policy
+        """
+        return self.stop(X, k_a=k_a)
+
+    def f_cl(self, X):
+        """
+        System dynamics as using backup policy u_b (Closed-Loop)
+        """
+        u_b = self.backup_input(X)
+        return self.f(X) + self.g(X) @ u_b
+
+    def F_cl(self, X):
+        """
+        Jacobian matrix of f_cl(X)
+        Use for STM calculation
+        As u_b = k_a * (-v), df_cl/dv = -k_a
+        """
+        k_a = 1.0
+        return np.array([
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+            [0, 0, -k_a, 0],
+            [0, 0, 0, -k_a]
+        ])
+
+    def h_b_stop(self, X):
+        """
+        Define Backup Set h_b(x) >= 0. (S_0)
+        h_b = v_max^2 - (vx^2 + vy^2) >= 0
+        """
+        v_sq = X[2, 0]**2 + X[3, 0]**2
+        v_safe_sq = (0.1)**2
+        return v_safe_sq - v_sq
+
+    def grad_h_b_stop(self, X):
+        """
+        Gradient of h_b_stop
+        """
+        return np.array([[0, 0, -2 * X[2, 0], -2 * X[3, 0]]])
+
+    def simulate_backup_trajectory(self, x0, T, dt):
+        """
+        Compute the future trajectory (phi_b) and sensitivity matrix (Phi_b, STM) by following the backup controller from the current state x0.
+        """
+        from scipy.integrate import solve_ivp
+
+        def augmented_dynamics(t, y):
+            x = y[0:4]
+            Phi = y[4:].reshape((4, 4))
+            
+            x_dot = self.f_cl(x.reshape(-1, 1)).flatten()
+            Phi_dot = self.F_cl(x) @ Phi
+            
+            return np.concatenate([x_dot, Phi_dot.flatten()])
+
+        y0 = np.concatenate([x0.flatten(), np.eye(4).flatten()])
+        t_eval = np.arange(0, T + dt, dt)
+        
+        sol = solve_ivp(
+            augmented_dynamics,
+            [0, T],
+            y0,
+            t_eval=t_eval,
+            dense_output=True
+        )
+        
+        backup_traj = sol.y[0:4, :].T
+        stm_traj = sol.y[4:, :].T.reshape(-1, 4, 4)
+        
+        return backup_traj, stm_traj, t_eval

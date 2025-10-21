@@ -337,11 +337,17 @@ class BaseRobot:
         if self.robot_spec['model'] in ['Unicycle2D', 'DynamicUnicycle2D']:
             self.X[2, 0] = theta
 
-    def f(self):
-        return self.robot.f(self.X)
+    def f(self, X=None):
+        if X is None:
+            return self.robot.f(self.X)
+        else:
+            return self.robot.f(X)
 
-    def g(self):
-        return self.robot.g(self.X)
+    def g(self, X=None):
+        if X is None:
+            return self.robot.g(self.X)
+        else:
+            return self.robot.g(X)
 
     def f_casadi(self, X):
         return self.robot.f(X, casadi=True)
@@ -387,6 +393,15 @@ class BaseRobot:
     def agent_barrier_dt(self, x_k, u_k, obs):
         return self.robot.agent_barrier_dt(x_k, u_k, obs, self.robot_radius)
 
+    def simulate_backup_trajectory(self, x0, T, dt):
+        return self.robot.simulate_backup_trajectory(x0, T, dt)
+    
+    def h_b_stop(self, X):
+        return self.robot.h_b_stop(X)
+
+    def grad_h_b_stop(self, X):
+        return self.robot.grad_h_b_stop(X)
+    
     def step(self, U, U_att=None):
         # wrap step function
         self.U = U.reshape(-1, 1)

@@ -124,6 +124,9 @@ class LocalTrackingController:
         if self.pos_controller_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
+        elif self.pos_controller_type == 'backup_cbf_qp':
+            from position_control.backup_cbf_qp import BackupCBFQP
+            self.pos_controller = BackupCBFQP(self.robot, self.robot_spec)
         elif self.pos_controller_type == 'mpc_cbf':
             from position_control.mpc_cbf import MPCCBF
             self.pos_controller = MPCCBF(self.robot, self.robot_spec, show_mpc_traj=self.show_mpc_traj)
@@ -623,7 +626,7 @@ class LocalTrackingController:
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'DynamicUnicycle2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
+    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, DoubleIntegrator2D, Quad2D, Quad3D, VTOL2D
 
     waypoints = [
         [2, 2, math.pi/2],
@@ -850,6 +853,7 @@ if __name__ == "__main__":
     import math
 
     # single_agent_main(controller_type={'pos': 'cbf_qp'})
-    single_agent_main(controller_type={'pos': 'mpc_cbf'})
+    # single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
+    single_agent_main(controller_type={'pos': 'backup_cbf_qp'})
     
