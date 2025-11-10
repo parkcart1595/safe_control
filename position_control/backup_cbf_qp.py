@@ -19,41 +19,6 @@ class BackupCBFQP:
 
         self.setup_control_problem()
         
-    def simulate_backup_trajectory(self, x0, T, dt, occlusion_scenarios=None):
-        """
-        Compute the future trajectory (phi_b) and sensitivity matrix (Phi_b, STM) by following the backup controller from the current state x0.
-        """
-        from scipy.integrate import solve_ivp
-
-        def augmented_dynamics(t, y):
-            x = y[0:4]
-            Phi = y[4:].reshape((4, 4))
-            
-            x_col = x.reshape(-1, 1)
-            x_dot = self.f_cl(x_col, occlusion_scenarios).flatten()
-            Phi_dot = self.F_cl(x) @ Phi
-            
-            # x_dot = self.f_cl(x.reshape(-1, 1)).flatten()
-            # Phi_dot = self.F_cl(x) @ Phi
-            
-            return np.concatenate([x_dot, Phi_dot.flatten()])
-
-        y0 = np.concatenate([x0.flatten(), np.eye(4).flatten()])
-        t_eval = np.arange(0, T + dt, dt)
-        
-        sol = solve_ivp(
-            augmented_dynamics,
-            [0, T],
-            y0,
-            t_eval=t_eval,
-            dense_output=True
-        )
-        
-        backup_traj = sol.y[0:4, :].T       # (N,4)
-        stm_traj = sol.y[4:, :].T.reshape(-1, 4, 4)
-        
-        return backup_traj, stm_traj, t_eval
-        
     def _occlusion_barrier_softmax(self, pos, scenario, tau):
         """
         Compute soft-max occlusion barrier and its gradient at a backup state.

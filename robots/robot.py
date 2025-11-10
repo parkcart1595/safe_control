@@ -407,7 +407,6 @@ class BaseRobot:
                 return self.robot.simulate_backup_trajectory(
                     x0, T, dt, occlusion_scenarios=None
                 )
-        return self.robot.simulate_backup_trajectory(x0, T, dt, occlusion_scenarios=None)
     
     def h_b_stop(self, X):
         return self.robot.h_b_stop(X)
