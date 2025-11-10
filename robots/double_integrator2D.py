@@ -181,13 +181,56 @@ class DoubleIntegrator2D:
         Using stop() function as backup policy
         """
         return self.stop(X, k_a=k_a)
+    
+    #### Backup policy for occlusion-aware adversaries #########
+    def backup_input_occlusion(self, X, occlusion_scenarios, k_d=1.0, k_occ=1.0):
+        """
+        Occlusion-aware backup policy:
+        - By default, apply velocity damping.
+        - If there is a velocity component towards an occluded-unsafe direction, push the velocity away from that direction.
+        """
+        v = X[2:4, 0].astype(float)
+        u = -k_d * v  # base damping
 
-    def f_cl(self, X):
+        if occlusion_scenarios:
+            # Collect all facet normals from every occlusion scenario
+            A_stack = []
+            for sc in occlusion_scenarios:
+                A = sc.get('A', None)
+                if A is not None and A.size > 0:
+                    A_stack.append(A)
+            if len(A_stack) > 0:
+                A_all = np.vstack(A_stack)  # (M_tot, 2)
+                # soft aggrgation: use the average normal (signs are already chosen so that they point toward the unsafe side)
+                n = -A_all.mean(axis=0)
+                n_norm = np.linalg.norm(n)
+                if n_norm > 1e-6:
+                    n = n / n_norm  # normalized unsafe-direction normal
+                    v_dot_n = float(v @ n)
+                    # If v_dot_n <0 means along the unsafe direction
+                    if v_dot_n > 0.0:
+                        u -= k_occ * v_dot_n * n
+
+        # saturation
+        a_max = float(self.robot_spec.get('a_max', 1.0))
+        norm_u = np.linalg.norm(u)
+        if norm_u > a_max > 0.0:
+            u = u * (a_max / norm_u)
+
+        return u.reshape(2, 1)
+
+    def f_cl(self, X, occlusion_scenarios=None):
         """
         System dynamics as using backup policy u_b (Closed-Loop)
         """
-        u_b = self.backup_input(X)
+        if occlusion_scenarios:
+            u_b = self.backup_input_occlusion(X, occlusion_scenarios)
+        else:
+            u_b = self.backup_input(X)
         return self.f(X) + self.g(X) @ u_b
+    
+        # u_b = self.backup_input(X)
+        # return self.f(X) + self.g(X) @ u_b
 
     def F_cl(self, X):
         """
@@ -217,34 +260,3 @@ class DoubleIntegrator2D:
         Gradient of h_b_stop
         """
         return np.array([[0, 0, -2 * X[2, 0], -2 * X[3, 0]]])
-
-    def simulate_backup_trajectory(self, x0, T, dt):
-        """
-        Compute the future trajectory (phi_b) and sensitivity matrix (Phi_b, STM) by following the backup controller from the current state x0.
-        """
-        from scipy.integrate import solve_ivp
-
-        def augmented_dynamics(t, y):
-            x = y[0:4]
-            Phi = y[4:].reshape((4, 4))
-            
-            x_dot = self.f_cl(x.reshape(-1, 1)).flatten()
-            Phi_dot = self.F_cl(x) @ Phi
-            
-            return np.concatenate([x_dot, Phi_dot.flatten()])
-
-        y0 = np.concatenate([x0.flatten(), np.eye(4).flatten()])
-        t_eval = np.arange(0, T + dt, dt)
-        
-        sol = solve_ivp(
-            augmented_dynamics,
-            [0, T],
-            y0,
-            t_eval=t_eval,
-            dense_output=True
-        )
-        
-        backup_traj = sol.y[0:4, :].T
-        stm_traj = sol.y[4:, :].T.reshape(-1, 4, 4)
-        
-        return backup_traj, stm_traj, t_eval

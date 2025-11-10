@@ -37,6 +37,8 @@ class BaseRobot:
         self.X = X0.reshape(-1, 1)
         self.dt = dt
         self.robot_spec = robot_spec
+        
+        self.occlusion_patches = []
 
         self.robot_spec.setdefault('robot_id', 0)
         self.robot_spec.setdefault('exploration', False)
@@ -393,8 +395,19 @@ class BaseRobot:
     def agent_barrier_dt(self, x_k, u_k, obs):
         return self.robot.agent_barrier_dt(x_k, u_k, obs, self.robot_radius)
 
-    def simulate_backup_trajectory(self, x0, T, dt):
-        return self.robot.simulate_backup_trajectory(x0, T, dt)
+    def simulate_backup_trajectory(self, x0, T, dt, occlusion_scenarios=None):
+        if occlusion_scenarios is not None:
+            return self.robot.simulate_backup_trajectory(
+                x0, T, dt, occlusion_scenarios=occlusion_scenarios
+            )
+        else:
+            try:
+                return self.robot.simulate_backup_trajectory(x0, T, dt)
+            except TypeError:
+                return self.robot.simulate_backup_trajectory(
+                    x0, T, dt, occlusion_scenarios=None
+                )
+        return self.robot.simulate_backup_trajectory(x0, T, dt, occlusion_scenarios=None)
     
     def h_b_stop(self, X):
         return self.robot.h_b_stop(X)
@@ -625,6 +638,60 @@ class BaseRobot:
                             self.X[1, 0] + braking_distance * np.sin(self.yaw))
             self.safety_area = LineString([Point(self.X[0, 0], self.X[1, 0]), Point(
                 front_center)]).buffer(self.robot_radius)
+            
+    def update_occlusion_polygons(self, occlusion_scenarios):
+        """
+        occlusion_scenarios: list
+        - List of scenrios from BakcupCBFQP
+        - Each scenario should contain 'poly': (4,2) array of vertices defining a convex occlusion polygon
+        """
+        for p in self.occlusion_patches:
+            try:
+                p.remove()
+            except:
+                pass
+        self.occlusion_patches = []
+
+        if not occlusion_scenarios:
+            return
+
+        for sc in occlusion_scenarios:
+            poly = sc.get('poly', None)
+            if poly is None:
+                continue
+
+            patch = patches.Polygon(
+                poly,
+                closed=True,
+                fill=True,
+                facecolor='gray',
+                edgecolor='black',
+                alpha=0.2,
+                zorder=1,
+            )
+            self.ax.add_patch(patch)
+            self.occlusion_patches.append(patch)
+            
+    def backup_input_occlusion(self, X, occlusion_scenarios, k_d=1.0, k_occ=1.0):
+        """
+        Wrapper for occlusion-aware backup policy.
+        - If underlying model has backup_input_occlusion: delegate.
+        - Else fall back to normal backup_input / stop.
+        """
+        # underlying robot
+        if hasattr(self.robot, "backup_input_occlusion"):
+            return self.robot.backup_input_occlusion(X, occlusion_scenarios, k_d=k_d, k_occ=k_occ)
+
+        # If only backup_input
+        if hasattr(self.robot, "backup_input"):
+            return self.robot.backup_input(X)
+
+        # Using stop() - last prior
+        if hasattr(self.robot, "stop"):
+            return self.robot.stop(X)
+
+        # 0 input
+        return np.zeros((2, 1))
 
     def is_beyond_sensing_footprints(self, mode='point_mass'):
         if mode == 'safety_area':

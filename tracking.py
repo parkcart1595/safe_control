@@ -120,7 +120,7 @@ class LocalTrackingController:
 
         # Setup control problem
         self.setup_robot(X0)
-        self.num_constraints = 5 # number of max obstacle constraints to consider in the controller
+        self.num_constraints = 10 # number of max obstacle constraints to consider in the controller
         if self.pos_controller_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec)
@@ -268,7 +268,7 @@ class LocalTrackingController:
                 )
             )
 
-    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=5):
+    def get_nearest_unpassed_obs(self, detected_obs, angle_unpassed=np.pi*2, obs_num=10):
         def angle_normalize(x):
             return (((x + np.pi) % (2 * np.pi)) - np.pi)
         '''

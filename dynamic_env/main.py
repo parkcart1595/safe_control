@@ -35,6 +35,9 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         if self.pos_controller_type == 'cbf_qp':
             from position_control.cbf_qp import CBFQP
             self.pos_controller = CBFQP(self.robot, self.robot_spec, num_obs=10)
+        if self.pos_controller_type == 'backup_cbf_qp':
+            from position_control.backup_cbf_qp import BackupCBFQP
+            self.pos_controller = BackupCBFQP(self.robot, self.robot_spec, num_obs=10)
         
         # Create a list to hold the arrow patches for obstacle velocities
         self.obs_vel_arrows = []
@@ -53,9 +56,21 @@ class LocalTrackingControllerDyn(LocalTrackingController):
     # Update dynamic obs position
     def step_dyn_obs(self):
         """if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step"""
-        if len(self.obs) != 0 and self.obs.shape[1] >= 5:
-            self.obs[:, 0] += self.obs[:, 3] * self.dt
-            self.obs[:, 1] += self.obs[:, 4] * self.dt
+        if len(self.obs) != 0 and self.obs.shape[1] >= 7:
+            for i, obs_info in enumerate(self.obs):
+                # obs_info = [x, y, r, vx, vy, y_min, y_max]
+                self.obs[i, 0] += self.obs[i, 3] * self.dt  # x += vx*dt (if vx != 0)
+                self.obs[i, 1] += self.obs[i, 4] * self.dt  # y += vy*dt
+
+                # Flip velocity if it hits top or bottom
+                y_min = self.obs[i, 5]
+                y_max = self.obs[i, 6]
+                if self.obs[i, 1] >= y_max:
+                    self.obs[i, 1] = y_max
+                    self.obs[i, 4] = -abs(self.obs[i, 4])  # flip to negative
+                elif self.obs[i, 1] <= y_min:
+                    self.obs[i, 1] = y_min
+                    self.obs[i, 4] = abs(self.obs[i, 4])   # flip to positive
     
     def render_dyn_obs(self):
         if len(self.obs_vel_arrows) != len(self.obs):
@@ -195,18 +210,31 @@ class LocalTrackingControllerDyn(LocalTrackingController):
 
         # 8. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
-        if self.pos_controller.status != 'optimal' or collide:
-            cause = "Collision" if collide else "Infeasible"
-            self.draw_infeasible()
-            print(f"{cause} detected !!")
-            if self.raise_error:
-                raise InfeasibleError(f"{cause} detected !!")
-            return -2
+        
+        if self.pos_controller_type == 'backup_cbf_qp':
+            if collide:
+                self.draw_infeasible()
+                print("Collision detected !!")
+                if self.raise_error:
+                    raise InfeasibleError("Collision detected !!")
+                return -2
+        else:
+            if self.pos_controller.status != 'optimal' or collide:
+                cause = "Collision" if collide else "Infeasible"
+                self.draw_infeasible()
+                print(f"{cause} detected !!")
+                if self.raise_error:
+                    raise InfeasibleError(f"{cause} detected !!")
+                return -2
 
         # 9. Step the robot
         self.robot.step(u, self.u_att)
         self.u_pos = u
-    
+
+        if hasattr(self.robot, "update_occlusion_polygons") and \
+            hasattr(self.pos_controller, "occlusion_scenarios"):
+                self.robot.update_occlusion_polygons(self.pos_controller.occlusion_scenarios)
+                
         if self.show_animation:
             self.robot.render_plot()
 
@@ -228,7 +256,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
 
 def single_agent_main(controller_type):
     dt = 0.05
-    model = 'KinematicBicycle2D_DPCBF' # SingleIntegrator2D, DoubleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, Quad2D
+    model = 'DoubleIntegrator2D' # SingleIntegrator2D, DoubleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, Quad2D
 
     waypoints = [
          [1, 7.5, 0],
@@ -236,29 +264,71 @@ def single_agent_main(controller_type):
     ]
 
     # Define dynamic obs
+    # known_obs = np.array([
+    #     [15.0, 12.3, 0.5],  # obstacle 1
+    #     # [8.0, 11.0, 0.5],  # obstacle 3
+    #     # [10.0, 5.0, 0.5],  # obstacle 5
+    #     # [12.0, 7.0, 0.5],  # obstacle 7
+    #     # [16.0, 6.5, 0.5],  # obstacle 9
+    #     # [17.0, 7.0, 0.5],  # obstacle 11
+    #     # [18.0, 7.5, 0.5],  # obstacle 13
+    #     #[22.0, 12.0, 0.5],  # obstacle 15
+    # ])
+    ## Bus scenario
+    # known_obs = np.array([
+    #     [7.0, 6.0, 0.5],  # obstacle 3
+    #     [8.0, 6.0, 0.5],  # obstacle 5
+    #     [7.0, 5.5, 0.5],  # obstacle 7
+    #     [8.0, 5.5, 0.5],  # obstacle 9
+    #     [7.0, 5.0, 0.5],  # obstacle 11
+    #     [8.0, 5.0, 0.5],  # obstacle 13
+    #     # [22.0, 12.0, 0.5],  # obstacle 15
+    # ])
+    # ## Supermarket Scenario
+    # known_obs = np.array([
+    #     [8.0, 5.0, 0.5],  # obstacle 1
+    #     # [10.0, 5.0, 0.5],  # obstacle 2
+    #     [12.0, 11.0, 0.5],  # obstacle 3
+    #     # [16.0, 6.5, 0.5],  # obstacle 4
+    #     [16.0, 3.0, 0.5],  # obstacle 5
+    #     [20.0, 7.5, 0.5],  # obstacle 6
+    #     [24.0, 12.0, 0.5],  # obstacle 7
+    # ])
+    ## LoS scenario static/dyn
+    # known_obs = np.array([
+    #     [15.0, 7.5, 0.5],  # obstacle 1
+    # ])
+    ## Crowd Scenario
     known_obs = np.array([
-        [8.0, 9.0, 0.5],  # obstacle 1
-        [10.0, 4.0, 0.5],  # obstacle 3
-        [12.0, 5.0, 0.5],  # obstacle 5
-        [14.0, 9.0, 0.5],  # obstacle 7
-        [16.0, 6.0, 0.5],  # obstacle 9
-        [18.0, 14.0, 0.5],  # obstacle 11
-        [20.0, 4.0, 0.5],  # obstacle 13
-        [22.0, 12.0, 0.5],  # obstacle 15
+        [7.0, 5.4, 0.3],  # obstacle 1
+        [8.0, 1.5, 0.3],  # obstacle 2
+        [9.0, 7.8, 0.3],  # obstacle 3
+        [10.0, 3.2, 0.3],  # obstacle 4
+        [11.0, 11.9, 0.3],  # obstacle 5
+        [12.0, 9.1, 0.3],  # obstacle 6
+        [13.0, 2.8, 0.3],  # obstacle 7
+        [14.0, 12.3, 0.3],  # obstacle 2
+        [15.0, 4.7, 0.3],  # obstacle 3
+        [16.0, 10.6, 0.3],  # obstacle 4
+        [17.0, 8.0, 0.3],  # obstacle 5
+        [18.0, 5.4, 0.3],  # obstacle 6
+        [19.0, 13.0, 0.3],  # obstacle 7
+        [20.0, 6.3, 0.3],
+        [21.0, 8.9, 0.3]
     ])
 
     dynamic_obs = []  
     for i, obs_info in enumerate(known_obs):
         ox, oy, r = obs_info[:3]
-        if i % 2 == 0:
-            vx, vy = -0.5, 0.5
+        if i % 2 == 1:
+            vx, vy = -0.2, 0.2
         else:
-            vx, vy = -0.5, -0.5
-        y_min, y_max = 0.0, 15.0
+            vx, vy = -0.2, -0.2
+        y_min, y_max = 1.0, 14.0
         dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
     known_obs = np.array(dynamic_obs)
 
-    env_width = 22.0
+    env_width = 24.0
     env_height = 15.0
     if model == 'SingleIntegrator2D':
         robot_spec = {
@@ -272,7 +342,9 @@ def single_agent_main(controller_type):
             'v_max': 1.0,
             'a_max': 1.0,
             'radius': 0.25,
-            'sensor': 'rgbd'
+            'sensor': 'rgbd',
+            'debug_backup_qp': True,
+            'sensing_range': 10.0
         }
     elif model == 'DynamicUnicycle2D':
         robot_spec = {
@@ -336,7 +408,7 @@ def single_agent_main(controller_type):
                                                   controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=False,
+                                                  save_animation=True,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)
@@ -352,6 +424,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    single_agent_main(controller_type={'pos': 'cbf_qp'})
+    # single_agent_main(controller_type={'pos': 'cbf_qp'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
+    single_agent_main(controller_type={'pos': 'backup_cbf_qp'})
