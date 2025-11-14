@@ -37,8 +37,6 @@ class BaseRobot:
         self.X = X0.reshape(-1, 1)
         self.dt = dt
         self.robot_spec = robot_spec
-        
-        self.occlusion_patches = []
 
         self.robot_spec.setdefault('robot_id', 0)
         self.robot_spec.setdefault('exploration', False)

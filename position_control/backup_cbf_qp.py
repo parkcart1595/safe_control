@@ -1,5 +1,7 @@
 import numpy as np
 import cvxpy as cp
+import time
+from matplotlib.path import Path
 
 class BackupCBFQP:
     def __init__(self, robot, robot_spec, num_obs=10, kappa=10.0):
@@ -13,7 +15,7 @@ class BackupCBFQP:
         self.debug = bool(self.robot_spec.get('debug_backup_qp', False))
 
         # Backup CBF parameters
-        self.T_horizon = 2.0   # backup time T
+        self.T_horizon = 3.0   # backup time T
         self.dt_backup = 0.05   # backup trajectory sampling time step
         self.alpha = 1.0       # Class-K function
 
@@ -93,6 +95,92 @@ class BackupCBFQP:
 
         return float(h_tilde), grad_pos  # grad_pos (1,2)
     
+    def _occlusion_barrier_softmax_curved(self, pos, scenario, tau=0.0):
+        """
+        Curved occlusion barrier:
+        - h1, h2 : two tangent half-space
+        - h3     : sensing range arc
+        - h4     : obstacle arc
+
+        h_tilde(x) = (1/kappa) [ log Σ exp(kappa h_i(x)) - log(4) ]
+        """
+        p = scenario['robot_pos']       # robot position
+        c = scenario['obs_center']      # obstacle center
+        R_o = scenario['obs_radius']    # obstacle radius
+        pi_adv = scenario['v_adv_max']
+        R = self.robot_spec['radius']   # robot radius (margin)
+        kappa = self.kappa
+        
+        A = scenario.get('A', None)
+        b0 = scenario.get('b0', None)
+        if A is None or b0 is None or A.shape[0] < 2:
+            return None, None, None
+        
+        pos = np.asarray(pos, float).reshape(2,)
+        x, y = pos
+
+        # --- tangent halfspaces (use first 2 rows) ---
+        a1, a2 = A[3], A[1]
+        beta1, beta2 = b0[3], b0[1]
+
+        # safe if outside wedge (plus robot radius margin)
+        h1 = a1 @ pos - beta1 - R
+        h2 = a2 @ pos - beta2 - R
+        
+        A_stack = []
+        if h1 >=0:
+            A_stack.append(a1)
+        if h2 >=0:
+            A_stack.append(a2)
+            
+        if A_stack:
+            risk_normal_vec = np.vstack(A_stack)
+        else:
+            risk_normal_vec = np.empty((0,2))
+
+        # --- expanded obstacle disk ---
+        R_occ = pi_adv * float(tau)
+        dx_o = x - c[0]
+        dy_o = y - c[1]
+        # safe if outside expanded disk (plus robot radius)
+        h3 = dx_o*dx_o + dy_o*dy_o - (R_occ + R + R_o)**2
+
+        h_i = np.array([h1, h2, h3], dtype=float)
+        if not np.all(np.isfinite(h_i)):
+            return None, None, None
+
+        # log-sum-exp soft-max
+        M = h_i.size
+        max_h = np.max(h_i)
+        z = np.exp(kappa * (h_i - max_h))
+        Z = np.sum(z)
+        if not np.isfinite(Z) or Z <= 0.0:
+            return None, None, None
+
+        lse = max_h + np.log(Z)
+        h_tilde = (lse - np.log(M)) / kappa
+
+        # gradient:
+        # ∂h1/∂x = a1
+        # ∂h2/∂x = a2
+        # ∂h3/∂x = 2(x-p)
+        # ∂h4/∂x = -2(x-c)
+        dh1 = a1
+        dh2 = a2
+        # dh3 = np.array([2.0 * dx_s, 2.0 * dy_s])
+        dh3 = 2.0 * np.array([dx_o, dy_o])
+
+        grads = np.vstack([dh1, dh2, dh3])  # (4,2)
+
+        lambda_i = z / Z
+        grad_pos = (lambda_i[:, None] * grads).sum(axis=0, keepdims=True)
+
+        if not np.all(np.isfinite(grad_pos)):
+            return None, None, None
+
+        return float(h_tilde), grad_pos, risk_normal_vec
+
+    
     def _circle_tangents(self, p, c, R):
         """
         Compute tangent points from point p to a circle centered at c with radius R.
@@ -120,6 +208,34 @@ class BackupCBFQP:
         t1 = np.array([x0 - y1 * k, y0 + x1 * k]) + c
         t2 = np.array([x0 + y1 * k, y0 - x1 * k]) + c
         return t1, t2
+    
+    def _segment_intersects_circle(self, p, x, c, R):
+        """
+        Check if segment [p, x] intersects the circle centered at c with radius R.
+        Used to define 'true' occlusion: line-of-sight blocked by obstacle.
+        """
+        p = np.asarray(p, float)
+        x = np.asarray(x, float)
+        c = np.asarray(c, float)
+
+        d = x - p
+        f = p - c
+
+        a = d @ d
+        b = 2.0 * (f @ d)
+        c_term = f @ f - R**2
+
+        disc = b*b - 4.0*a*c_term
+        if disc < 0.0 or a <= 1e-12:
+            return False
+
+        sqrt_disc = np.sqrt(disc)
+        t1 = (-b - sqrt_disc) / (2.0 * a)
+        t2 = (-b + sqrt_disc) / (2.0 * a)
+
+        # intersection lies on the segment if 0 <= t <= 1
+        return (0.0 <= t1 <= 1.0) or (0.0 <= t2 <= 1.0)
+
     
     def _polygon_to_halfspaces(self, poly):
         """
@@ -167,7 +283,7 @@ class BackupCBFQP:
         
         return A, b0
     
-    def _build_occlusion_scenario_for_obs(self, robot_state, obs):
+    def _build_occlusion_scenario(self, robot_state, obs):
         """
         Build an occlusion scenario for a single circular obstacle.
 
@@ -194,6 +310,13 @@ class BackupCBFQP:
 
         sensing_R = self.sensing_range
         v_adv = float(self.robot_spec.get('v_adv_max_occ', 0.5))
+        
+        p_rel = np.array([[px - ox], 
+                        [py - oy]])
+        
+        p_rel_mag = np.linalg.norm(p_rel)
+        arc_adv = v_adv * p_rel / p_rel_mag
+        arc_adv = arc_adv.flatten()
 
         # Ignore obstacle if it is outside sensing range
         d = np.linalg.norm(c - p)
@@ -210,13 +333,13 @@ class BackupCBFQP:
         n1 = np.linalg.norm(dir1)
         if n1 < 1e-6:
             return None
-        dir1 /= n1
+        dir1 /= n1  # tangent 1 unit vector
         
         dir2 = t2 - p
         n2 = np.linalg.norm(dir2)
         if n2 < 1e-6:
             return None
-        dir2 /= n2
+        dir2 /= n2  # tangenet 2 unit vector
 
         far1 = p + sensing_R * dir1
         far2 = p + sensing_R * dir2
@@ -227,14 +350,214 @@ class BackupCBFQP:
         A, b0 = self._polygon_to_halfspaces(poly)
         if A is None:
             return None
-
+        
         scenario = {
-            'A': A,          # (M_k, 2)
-            'b0': b0,        # (M_k,)
+            'A': A,
+            'b0': b0,
             'v_adv_max': v_adv,
-            'poly': poly
+            'arc_adv': arc_adv,
+            'poly': poly,
+            ## For arc softmax
+            'robot_pos': p,
+            'obs_center': c,
+            'obs_radius': R_o,
+            't1': t1,
+            't2': t2,
         }
+        
+        _, _, risk_vec = self._occlusion_barrier_softmax_curved(p, scenario, tau=0.0)
+        
+        risk_vec *= v_adv
+        scenario['risk_normal_vec']= risk_vec
+        
         return scenario
+    
+    def _point_in_poly(self, pt, poly):
+        # poly: (N,2), pt: (2,)
+        path = Path(poly)
+        return path.contains_point((float(pt[0]), float(pt[1])), radius=1e-12)
+        
+    def _filter_visible_and_build_occ(self, robot_state, obs_list):
+        
+        visible_obs = []
+        occl_scenarios = []
+        wedge_paths = []
+
+        if obs_list is None:
+            return visible_obs, occl_scenarios
+
+        obs_arr = np.array(obs_list, dtype=float)
+        if obs_arr.ndim == 1:
+            obs_arr = obs_arr.reshape(1, -1)
+
+        px, py = float(robot_state[0, 0]), float(robot_state[1, 0])
+        p = np.array([px, py])
+        R_sense2 = self.sensing_range ** 2
+
+        keep = []
+        for k, o in enumerate(obs_arr):
+            if (o[0]-px)**2 + (o[1]-py)**2 <= R_sense2:
+                keep.append(k)
+        if not keep:
+            return visible_obs, occl_scenarios
+
+        obs_arr = obs_arr[keep]
+
+        dists = np.linalg.norm(obs_arr[:, :2] - p[None, :], axis=1)
+        order = np.argsort(dists)
+
+        for idx in order:
+            obs = obs_arr[idx]
+            c = obs[:2]
+
+            occluded = any(self._point_in_poly(c, sc['poly']) for sc in occl_scenarios)
+            if occluded:
+                continue
+
+            visible_obs.append(obs)
+
+            sc = self._build_occlusion_scenario(robot_state, obs)
+            if sc is not None and sc.get('poly') is not None:
+                occl_scenarios.append(sc)
+
+        return visible_obs, occl_scenarios
+
+    def visualize_occlusion_curved_debug(self, robot_state, obs, kappa=None, grid_res=0.05, tau=0.0):
+        """
+        Debug visualization for ONE obstacle:
+          - True occlusion region (LOS-blocked, using circle arcs implicitly)
+          - Curved softmax occlusion set { x | h_tilde_curved(x) <= 0 }
+          - Polygon wedge used to build (A, b0)
+
+        """
+        import matplotlib.pyplot as plt
+
+        if kappa is not None:
+            old_kappa = self.kappa
+            self.kappa = kappa
+        else:
+            old_kappa = self.kappa
+
+        # Robot state & obstacle
+        px = float(robot_state[0, 0])
+        py = float(robot_state[1, 0])
+        p = np.array([px, py])
+
+        obs = np.asarray(obs, dtype=float).flatten()
+        ox, oy, r_obs = obs[:3]
+        c = np.array([ox, oy])
+        R_obs = float(r_obs)
+
+        sensing_R = self.sensing_range
+
+        # Build scenario (includes robot_pos, obs_center, etc.)
+        scenario = self._build_occlusion_scenario(robot_state, obs)
+        if scenario is None:
+            print("[viz] No valid occlusion scenario.")
+            self.kappa = old_kappa
+            return
+
+        poly = scenario['poly']
+
+        # ----- Grid -----
+        margin = sensing_R + 0.5
+        xmin = px - margin
+        xmax = px + margin
+        ymin = py - margin
+        ymax = py + margin
+
+        xs = np.arange(xmin, xmax + grid_res, grid_res)
+        ys = np.arange(ymin, ymax + grid_res, grid_res)
+        XX, YY = np.meshgrid(xs, ys)
+
+        true_occ = np.zeros_like(XX, dtype=bool)
+        h_curved = np.full_like(XX, np.nan, dtype=float)
+
+        # ----- 1) True occlusion region (LOS block) -----
+        for i in range(XX.shape[0]):
+            for j in range(XX.shape[1]):
+                x = np.array([XX[i, j], YY[i, j]])
+
+                if np.linalg.norm(x - p) > sensing_R:
+                    continue
+
+                if self._segment_intersects_circle(p, x, c, R_obs):
+                    true_occ[i, j] = True
+
+        # ----- 2) Curved softmax barrier field h_tilde_curved(x) -----
+        for i in range(XX.shape[0]):
+            for j in range(XX.shape[1]):
+                x = np.array([XX[i, j], YY[i, j]])
+                pos_col = x.reshape(2, 1)
+
+                h_tilde, _, _ = self._occlusion_barrier_softmax_curved(
+                    pos_col,
+                    scenario,
+                    tau=tau
+                )
+                if h_tilde is not None and np.isfinite(h_tilde):
+                    h_curved[i, j] = h_tilde
+
+        # ----- Plot -----
+        fig, ax = plt.subplots()
+        ax.set_aspect('equal', 'box')
+
+        # Robot
+        ax.plot(px, py, 'ko', markersize=5, label='robot')
+
+        # Sensing circle
+        sensing_circle = plt.Circle((px, py), sensing_R,
+                                    fill=False, linestyle='--', color='gray')
+        ax.add_patch(sensing_circle)
+
+        # Obstacle
+        obs_circle = plt.Circle((ox, oy), R_obs,
+                                fill=False, color='k')
+        ax.add_patch(obs_circle)
+
+        # True occlusion (LOS-based)
+        tc = ax.contourf(
+            XX, YY, true_occ,
+            levels=[0.5, 1.5],
+            alpha=0.25,
+            colors=['#ffcccc']
+        )
+        tc.collections[0].set_label('true occlusion (LOS)')
+
+        # Curved softmax 0-level set (QP에서 사용하는 approx boundary)
+        # h_tilde(x) = 0 레벨셋을 contour로 그림
+        try:
+            cs = ax.contour(
+                XX, YY, h_curved,
+                levels=[0.0],
+                colors='red',
+                linewidths=2.0
+            )
+            for cset in cs.collections:
+                cset.set_label('curved softmax h̃(x)=0')
+        except Exception:
+            print("[viz] Warning: could not draw curved softmax contour (maybe all NaN).")
+
+        # Polygon wedge
+        poly_closed = np.vstack([poly, poly[0]])
+        ax.plot(poly_closed[:, 0], poly_closed[:, 1],
+                'b--', linewidth=1.5, label='polygon wedge')
+
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        ax.set_title("True occlusion vs curved softmax approx vs polygon wedge")
+
+        handles, labels = ax.get_legend_handles_labels()
+        uniq = {}
+        for h, l in zip(handles, labels):
+            uniq[l] = h
+        ax.legend(uniq.values(), uniq.keys(), loc='upper right')
+
+        plt.show()
+
+        # restore kappa
+        self.kappa = old_kappa
+
 
     def setup_control_problem(self):
         # QP variables and parameters
@@ -312,13 +635,19 @@ class BackupCBFQP:
         no_obs = (len(detected_obs) == 0)
 
         # 1) Build occlusion scenarios from detected obstacles
-        occlusion_scenarios = []
-        if not no_obs:
-            for obs in detected_obs:
-                scenario = self._build_occlusion_scenario_for_obs(robot_state, obs)
-                if scenario is not None:
-                    occlusion_scenarios.append(scenario)
+        # occlusion_scenarios = []
+        # if not no_obs:
+        #     for obs in detected_obs:
+        #         scenario = self._build_occlusion_scenario(robot_state, obs)
+        #         if scenario is not None:
+        #             occlusion_scenarios.append(scenario)
+        # self.occlusion_scenarios = occlusion_scenarios
+        # no_occ = (len(self.occlusion_scenarios) == 0)
+        
+        visible_obs, occlusion_scenarios = self._filter_visible_and_build_occ(robot_state, obs_list)
         self.occlusion_scenarios = occlusion_scenarios
+
+        no_obs = (len(visible_obs) == 0)
         no_occ = (len(self.occlusion_scenarios) == 0)
 
         # 2) If there is no obstacle and no occlusion, use nominal control
@@ -353,7 +682,7 @@ class BackupCBFQP:
             gamma1 = 1.0  # class k_1
             gamma2 = 1.0  # class k_2
 
-            for obs in detected_obs:
+            for obs in visible_obs:
                 obs = np.asarray(obs, dtype=float).flatten()
                 ox, oy, r_obs = obs[:3]
                 if len(obs) >= 5:
@@ -434,7 +763,7 @@ class BackupCBFQP:
 
                     pos_i = phi_i[0:2]  # (2,1)
 
-                    h_tilde, grad_pos = self._occlusion_barrier_softmax(
+                    h_tilde, grad_pos, _ = self._occlusion_barrier_softmax_curved(
                         pos_i, scenario, tau
                     )
                     # if h_tilde is None:
@@ -497,16 +826,16 @@ class BackupCBFQP:
 
             # Skip degenerate constraint that would be infeasible by construction
             if np.linalg.norm(Lgh_b_T) < 1e-9 and rhs_b < 0.0:
-                print("loop1 in")
                 if self.debug:
                     print(f"[backup] skip degenerate (||Lgh||≈0, rhs={rhs_b:.3e}<0)")
             else:
-                print("loop2 in")
+                # print("loop_feasible in")
                 A_list.append(-Lgh_b_T)
                 b_list.append(np.array([[rhs_b]]))
 
         # 7) If no constraints, use nominal control
         num_constraints = len(A_list)
+        # print(f"num_cons: {num_constraints}")
         if num_constraints == 0:
             self.status = 'optimal'
             if self.debug:
@@ -527,26 +856,34 @@ class BackupCBFQP:
             print(f"[BackupCBFQP] num_constraints={num_constraints}, max_viol(u_ref)={viol:.3e}")
 
         # 8) Solve QP (try GUROBI first, fall back to OSQP)
+        t_start_qp = time.perf_counter()
         try:
             self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
         except cp.error.SolverError:
             self.cbf_controller.solve(solver=cp.OSQP)
             
+        t_end_qp = time.perf_counter()
+        
+        qp_solve_time_ms = (t_end_qp - t_start_qp) * 1000
+        
+        if self.debug:
+            print(f"[BackupCBFQP] QP Solve Time: {qp_solve_time_ms:.3f} ms")
+            
         self.status = self.cbf_controller.status
 
         if self.status != 'optimal':
-            print("loop3 in")
+            print("loop1 in")
             if (not no_occ) and hasattr(self.robot, "backup_input_occlusion"):
-                print("loop4 in")
+                print("loop2 in")
                 return self.robot.backup_input_occlusion(robot_state, self.occlusion_scenarios)
             elif hasattr(self.robot, "backup_input"):
-                print("loop5 in")
+                print("loop3 in")
                 return self.robot.backup_input(robot_state)
             elif hasattr(self.robot, "stop"):
-                print("loop6 in")
+                print("loop4 in")
                 return self.robot.stop(robot_state)
             else:
-                print("loop7 in")
+                print("loop5 in")
                 return np.zeros((2, 1))
             
         # if self.status != 'optimal':
@@ -556,72 +893,3 @@ class BackupCBFQP:
         #     # return self.robot.backup_input(robot_state)
 
         return self.u.value
-
-    # def solve_control_problem(self, robot_state, control_ref, obs_list):
-    #     self.u_ref.value = control_ref['u_ref']
-        
-    #     if obs_list is None:
-    #         # if no obstacle, use u_ref
-    #         self.status = 'optimal'
-    #         return self.u_ref.value
-
-    #     A_list, b_list = [], []
-        
-    #     phi_b, Phi_b, tau_points = self.robot.simulate_backup_trajectory(
-    #         robot_state, self.T_horizon, self.dt_backup
-    #     )
-        
-    #     # 1. obsatcle avoidance constraints (trajectory constraint)
-    #     for obs in obs_list:
-
-    #         for i in range(1, len(tau_points)): # except tau=0
-    #             phi_i = phi_b[i].reshape(-1, 1)
-    #             Phi_i = Phi_b[i]
-
-    #             # h(x) = ||x_pos - obs_pos||^2 - d_min^2
-    #             d_min = obs[2] + self.robot_spec['radius']
-    #             h_i = np.linalg.norm(phi_i[0:2] - obs[0:2].reshape(-1, 1))**2 - d_min**2
-                
-    #             pos_diff_col = phi_i[0:2] - obs[0:2].reshape(-1, 1) # (2,1) - (2,1) = (2,1)
-    #             grad_h_i = 2 * np.hstack([pos_diff_col.T, np.array([[0, 0]])])
-
-    #             # calculate Lie Derivative)
-    #             # h_dot = grad_h @ (Phi @ (f(x) + g(x)u))
-    #             Lfh_i = grad_h_i @ Phi_i @ self.robot.f(robot_state)
-    #             Lgh_i = grad_h_i @ Phi_i @ self.robot.g(robot_state)
-
-    #             # QP: A*u <= b
-    #             A_list.append(-Lgh_i)
-    #             b_list.append(Lfh_i + self.alpha * h_i)
-
-    #     # 2. Backup set constraint (final state constraint)
-    #     # final state phi_T should reach backup set
-    #     phi_T = phi_b[-1].reshape(-1, 1)
-    #     Phi_T = Phi_b[-1]
-        
-    #     h_b_T = self.robot.h_b_stop(phi_T)
-    #     grad_h_b_T = self.robot.grad_h_b_stop(phi_T)
-
-    #     Lfh_b_T = grad_h_b_T @ Phi_T @ self.robot.f(robot_state)
-    #     Lgh_b_T = grad_h_b_T @ Phi_T @ self.robot.g(robot_state)
-    #     A_list.append(-Lgh_b_T)
-    #     b_list.append(Lfh_b_T + self.alpha * h_b_T)
-
-    #     # 3. QP parameter update and solve
-    #     num_constraints = len(A_list)
-    #     A_cbf_val = np.array(A_list).reshape(num_constraints, 2)
-    #     b_cbf_val = np.array(b_list).reshape(num_constraints, 1)
-
-    #     self.A_cbf.value[:, :] = 0
-    #     self.A_cbf.value[:num_constraints, :] = A_cbf_val
-    #     self.b_cbf.value[:, :] = 1e6
-    #     self.b_cbf.value[:num_constraints, :] = b_cbf_val
-        
-    #     self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
-    #     self.status = self.cbf_controller.status
-        
-    #     if self.status != 'optimal':
-    #         # if qp is not solved, use backup policy
-    #         return self.robot.backup_input(robot_state)
-            
-    #     return self.u.value

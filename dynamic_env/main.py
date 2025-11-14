@@ -47,7 +47,6 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         self.init_obs_info = None
         self.init_obs_circle = None
     
-
     def setup_robot(self, X0):
         from dynamic_env.robot import BaseRobotDyn
         self.robot = BaseRobotDyn(
@@ -232,9 +231,19 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         self.u_pos = u
 
         if hasattr(self.robot, "update_occlusion_polygons") and \
-            hasattr(self.pos_controller, "occlusion_scenarios"):
-                self.robot.update_occlusion_polygons(self.pos_controller.occlusion_scenarios)
-                
+           hasattr(self.pos_controller, "occlusion_scenarios"):
+
+            use_curved = hasattr(self.pos_controller, "_occlusion_barrier_softmax_curved")
+            kappa = getattr(self.pos_controller, "kappa", 10.0)
+
+            self.robot.update_occlusion_polygons(
+                self.pos_controller.occlusion_scenarios,
+                use_curved=False,
+                kappa=kappa,
+                show_true_occ=True,
+                grid_res=0.05
+            )
+
         if self.show_animation:
             self.robot.render_plot()
 
@@ -259,7 +268,7 @@ def single_agent_main(controller_type):
     model = 'DoubleIntegrator2D' # SingleIntegrator2D, DoubleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, Quad2D
 
     waypoints = [
-         [1, 7.5, 0],
+         [10, 7.5, 0],
          [20, 7.5, 0],
     ]
 
@@ -269,12 +278,12 @@ def single_agent_main(controller_type):
     #     # [8.0, 11.0, 0.5],  # obstacle 3
     #     # [10.0, 5.0, 0.5],  # obstacle 5
     #     # [12.0, 7.0, 0.5],  # obstacle 7
-    #     # [16.0, 6.5, 0.5],  # obstacle 9
-    #     # [17.0, 7.0, 0.5],  # obstacle 11
-    #     # [18.0, 7.5, 0.5],  # obstacle 13
-    #     #[22.0, 12.0, 0.5],  # obstacle 15
+    #     [16.0, 6.5, 0.5],  # obstacle 9
+    #     [17.0, 7.0, 0.5],  # obstacle 11
+    #     [18.0, 7.5, 0.5],  # obstacle 13
+    #     [22.0, 12.0, 0.5],  # obstacle 15
     # ])
-    ## Bus scenario
+    # Bus scenario
     # known_obs = np.array([
     #     [7.0, 6.0, 0.5],  # obstacle 3
     #     [8.0, 6.0, 0.5],  # obstacle 5
@@ -284,47 +293,74 @@ def single_agent_main(controller_type):
     #     [8.0, 5.0, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
-    # ## Supermarket Scenario
+    # Supermarket Scenario
     # known_obs = np.array([
     #     [8.0, 5.0, 0.5],  # obstacle 1
-    #     # [10.0, 5.0, 0.5],  # obstacle 2
+    #     [10.0, 7.0, 0.5],  # obstacle 2
     #     [12.0, 11.0, 0.5],  # obstacle 3
-    #     # [16.0, 6.5, 0.5],  # obstacle 4
+    #     [14.0, 6.5, 0.5],  # obstacle 4
     #     [16.0, 3.0, 0.5],  # obstacle 5
-    #     [20.0, 7.5, 0.5],  # obstacle 6
+    #     [18.0, 7.5, 0.5],  # obstacle 6
+    #     [20.0, 8.9, 0.5],  # obstacle 6
+    #     [22.0, 10.6, 0.5],  # obstacle 6
     #     [24.0, 12.0, 0.5],  # obstacle 7
     # ])
-    ## LoS scenario static/dyn
+    # ## LoS scenario static/dyn
     # known_obs = np.array([
     #     [15.0, 7.5, 0.5],  # obstacle 1
     # ])
-    ## Crowd Scenario
+    # # Crowd Scenario
+    # known_obs = np.array([
+        
+    #     [8.0, 1.5, 0.3],    # obstacle 2
+    #     [9.0, 7.8, 0.3],    # obstacle 3
+    #     [10.0, 3.2, 0.3],   # obstacle 4
+    #     [11.0, 11.9, 0.3],  # obstacle 5
+    #     [12.0, 9.1, 0.3],   # obstacle 6
+    #     [13.0, 2.8, 0.3],   # obstacle 7
+    #     [14.0, 12.3, 0.3],  # obstacle 2
+    #     [15.0, 4.7, 0.3],   # obstacle 3
+    #     [16.0, 10.6, 0.3],  # obstacle 4
+    #     [17.0, 8.0, 0.3],   # obstacle 5
+    #     [18.0, 5.4, 0.3],   # obstacle 6
+    #     [19.0, 13.0, 0.3],  # obstacle 7
+    #     [20.0, 6.3, 0.3],   
+    #     [21.0, 8.9, 0.3],
+    #     [22.0, 5.4, 0.3],    # obstacle 1
+    # ])
+    ## Appear Unknown obs in LoS
+    # known_obs = np.array([
+    #     #[7.0, 6.0, 0.5],  # obstacle 3
+    #     #[8.0, 6.0, 0.5],  # obstacle 5
+    #     #[7.0, 5.5, 0.5],  # obstacle 7
+    #     [9.0, 9.0, 0.5],  # obstacle 9
+    #     #[1.0, 5.0, 0.5],  # obstacle 11
+    #     [9.5, 9.5, 0.5],  # obstacle 13
+    #     # [22.0, 12.0, 0.5],  # obstacle 15
+    # ])
+    # wall
     known_obs = np.array([
-        [7.0, 5.4, 0.3],  # obstacle 1
-        [8.0, 1.5, 0.3],  # obstacle 2
-        [9.0, 7.8, 0.3],  # obstacle 3
-        [10.0, 3.2, 0.3],  # obstacle 4
-        [11.0, 11.9, 0.3],  # obstacle 5
-        [12.0, 9.1, 0.3],  # obstacle 6
-        [13.0, 2.8, 0.3],  # obstacle 7
-        [14.0, 12.3, 0.3],  # obstacle 2
-        [15.0, 4.7, 0.3],  # obstacle 3
-        [16.0, 10.6, 0.3],  # obstacle 4
-        [17.0, 8.0, 0.3],  # obstacle 5
-        [18.0, 5.4, 0.3],  # obstacle 6
-        [19.0, 13.0, 0.3],  # obstacle 7
-        [20.0, 6.3, 0.3],
-        [21.0, 8.9, 0.3]
+        [12.0, 5.0, 0.6],  # obstacle 3
+        [13.0, 5.5, 0.6],  # obstacle 5
+        [14.0, 6.0, 0.6],  # obstacle 7
+        [15.0, 6.5, 0.6],  # obstacle 9
+        [15.5, 4.0, 0.5],  # obstacle 11
+        # [2.0, 5.0, 0.5],  # obstacle 13
+        # [22.0, 12.0, 0.5],  # obstacle 15
     ])
 
     dynamic_obs = []  
     for i, obs_info in enumerate(known_obs):
         ox, oy, r = obs_info[:3]
-        if i % 2 == 1:
-            vx, vy = -0.2, 0.2
-        else:
-            vx, vy = -0.2, -0.2
+        # if i % 2 == 0:
+        #     vx, vy = -0.2, 0.2
+        # else:
+        #     vx, vy = -0.2, -0.2
         y_min, y_max = 1.0, 14.0
+        if i <= 3:
+            vx, vy = 0.0, 0.0
+        else:
+            vx, vy = -0.0, 0.5
         dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
     known_obs = np.array(dynamic_obs)
 
@@ -342,7 +378,6 @@ def single_agent_main(controller_type):
             'v_max': 1.0,
             'a_max': 1.0,
             'radius': 0.25,
-            'sensor': 'rgbd',
             'debug_backup_qp': True,
             'sensing_range': 10.0
         }
@@ -424,7 +459,7 @@ if __name__ == "__main__":
     from utils import env
     import math
 
-    # single_agent_main(controller_type={'pos': 'cbf_qp'})
+    single_agent_main(controller_type={'pos': 'cbf_qp'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf'})
     # single_agent_main(controller_type={'pos': 'mpc_cbf', 'att': 'gatekeeper'}) # only Integrators have attitude controller, otherwise ignored
-    single_agent_main(controller_type={'pos': 'backup_cbf_qp'})
+    # single_agent_main(controller_type={'pos': 'backup_cbf_qp'})

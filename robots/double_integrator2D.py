@@ -190,33 +190,64 @@ class DoubleIntegrator2D:
         - If there is a velocity component towards an occluded-unsafe direction, push the velocity away from that direction.
         """
         v = X[2:4, 0].astype(float)
+        # u = np.zeros(2)
         u = -k_d * v  # base damping
 
+        # if occlusion_scenarios:
+        #     # Collect all facet normals from every occlusion scenario
+        #     A_stack = []
+        #     for sc in occlusion_scenarios:
+        #         A = sc.get('A', None)
+        #         if A is not None and A.size > 0:
+        #             A_stack.append(A)
+        #     if len(A_stack) > 0:
+        #         A_all = np.vstack(A_stack)  # (M_tot, 2)
+        #         # soft aggrgation: use the average normal (signs are already chosen so that they point toward the unsafe side)
+        #         n = -A_all.mean(axis=0)
+        #         n_norm = np.linalg.norm(n)
+        #         if n_norm > 1e-6:
+        #             n = n / n_norm  # normalized unsafe-direction normal
+        #             v_dot_n = float(v @ n)
+        #             # If v_dot_n <0 means along the unsafe direction
+        #             if v_dot_n > 0.0:
+        #                 u -= k_occ * v_dot_n * n
+        
         if occlusion_scenarios:
             # Collect all facet normals from every occlusion scenario
             A_stack = []
             for sc in occlusion_scenarios:
-                A = sc.get('A', None)
-                if A is not None and A.size > 0:
-                    A_stack.append(A)
+                tan_risk = sc.get('risk_normal_vec', None)
+                arc_risk = sc.get('arc_adv', None)
+                # print(f"tan_risk: {tan_risk} || arc_risk: {arc_risk}")
+                if tan_risk is not None and tan_risk.size > 0:
+                    A_stack.append(tan_risk)
+                    A_stack.append(arc_risk)
             if len(A_stack) > 0:
                 A_all = np.vstack(A_stack)  # (M_tot, 2)
                 # soft aggrgation: use the average normal (signs are already chosen so that they point toward the unsafe side)
-                n = -A_all.mean(axis=0)
-                n_norm = np.linalg.norm(n)
-                if n_norm > 1e-6:
-                    n = n / n_norm  # normalized unsafe-direction normal
-                    v_dot_n = float(v @ n)
-                    # If v_dot_n <0 means along the unsafe direction
-                    if v_dot_n > 0.0:
-                        u -= k_occ * v_dot_n * n
+                n_mean = A_all.mean(axis=0)
+                # print(f"A_all: {A_all} || n_mean: {n_mean}")
+                # n_norm = np.linalg.norm(n)
+                v_dot_n = float(v @ n_mean)
+                if v_dot_n > 0.0:
+                        u -= k_occ * v_dot_n * n_mean
+                        
+                # if n_norm > 1e-6:
+                #     n = n / n_norm  # normalized unsafe-direction normal
+                #     v_dot_n = float(v @ n)
+                #     # If v_dot_n <0 means along the unsafe direction
+                #     if v_dot_n > 0.0:
+                #         u -= k_occ * v_dot_n * n
 
         # saturation
-        a_max = float(self.robot_spec.get('a_max', 1.0))
-        norm_u = np.linalg.norm(u)
-        if norm_u > a_max > 0.0:
-            u = u * (a_max / norm_u)
-
+        # a_max = float(self.robot_spec.get('a_max', 1.0))
+        # norm_u = np.linalg.norm(u)
+        # if norm_u > a_max and norm_u > 0.0:
+        #     u = u * (a_max / norm_u)
+        a_lim = float(self.robot_spec.get('a_max', 1.0))
+        u = np.clip(u, -a_lim, a_lim)
+        # print(f"u: {u}")
+                    
         return u.reshape(2, 1)
 
     def f_cl(self, X, occlusion_scenarios=None):
@@ -252,7 +283,7 @@ class DoubleIntegrator2D:
         h_b = v_max^2 - (vx^2 + vy^2) >= 0
         """
         v_sq = X[2, 0]**2 + X[3, 0]**2
-        v_safe_sq = (0.1)**2
+        v_safe_sq = (0.3)**2
         return v_safe_sq - v_sq
 
     def grad_h_b_stop(self, X):
@@ -281,7 +312,7 @@ class DoubleIntegrator2D:
             return np.concatenate([x_dot, Phi_dot.flatten()])
 
         y0 = np.concatenate([x0.flatten(), np.eye(4).flatten()])
-        t_eval = np.arange(0, T + dt, dt)
+        t_eval = np.arange(0, T, dt)
         
         sol = solve_ivp(
             augmented_dynamics,
