@@ -3,6 +3,16 @@ import cvxpy as cp
 import time
 from matplotlib.path import Path
 
+class InfeasibleError(Exception):
+    '''
+    Exception raised for errors when QP is infeasible or 
+    the robot collides with the obstacle
+    '''
+
+    def __init__(self, message="ERROR in QP or Collision"):
+        self.message = message
+        super().__init__(self.message)
+
 class BackupCBFQP:
     def __init__(self, robot, robot_spec, num_obs=10, kappa=10.0):
         self.robot = robot
@@ -15,11 +25,23 @@ class BackupCBFQP:
         self.debug = bool(self.robot_spec.get('debug_backup_qp', False))
 
         # Backup CBF parameters
-        self.T_horizon = 3.0   # backup time T
+        self.T_horizon = 2.0   # backup time T
         self.dt_backup = 0.05   # backup trajectory sampling time step
         self.alpha = 1.0       # Class-K function
 
         self.setup_control_problem()
+        
+        target = self.robot
+        try:
+            if hasattr(target, "set_occ_barrier_fn"):
+                target.set_occ_barrier_fn(self._occlusion_barrier_softmax_curved)
+            elif hasattr(target, "robot") and hasattr(target.robot, "set_occ_barrier_fn"):
+                target.robot.set_occ_barrier_fn(self._occlusion_barrier_softmax_curved)
+            else:
+                print("[BackupCBFQP][WARN] Could not inject occlusion barrier callback "
+                    "(no set_occ_barrier_fn on robot).")
+        except Exception as e:
+            print(f"[BackupCBFQP][WARN] Failed to inject occ barrier callback: {e}")
         
     def _occlusion_barrier_softmax(self, pos, scenario, tau):
         """
@@ -558,7 +580,27 @@ class BackupCBFQP:
         # restore kappa
         self.kappa = old_kappa
 
+    # BackupCBFQP class 내부 (도우미 추가)
+    def _u_pi_at(self, x, scenarios):
+        # 1) 로봇이 백업-at 인터페이스를 주면 사용
+        if hasattr(self.robot, "backup_input_at"):
+            return self.robot.backup_input_at(x, scenarios)
+        # 2) 시야차단 aware 백업
+        if (scenarios is not None) and hasattr(self.robot, "backup_input_occlusion"):
+            u = self.robot.backup_input_occlusion(x, scenarios)
+            if u is not None:
+                return u
+        # 3) 일반 백업
+        if hasattr(self.robot, "backup_input"):
+            u = self.robot.backup_input(x)
+            if u is not None:
+                return u
+        # 4) 끝수단
+        if hasattr(self.robot, "stop"):
+            return self.robot.stop(x)
+        return np.zeros((2,1), dtype=float)
 
+    
     def setup_control_problem(self):
         # QP variables and parameters
         self.u = cp.Variable((2, 1))
@@ -784,8 +826,12 @@ class BackupCBFQP:
 
                     # f_x = self.robot.f(robot_state)   # (4,1)
                     # g_x = self.robot.g(robot_state)   # (4,2)
+                    
+                    u_pi_phi = self._u_pi_at(phi_i, self.occlusion_scenarios)
+                    u_pi_phi = np.asarray(u_pi_phi, dtype=float).reshape(2,1)
+                    f_pi_phi = self.robot.f(phi_i) + self.robot.g(phi_i) @ u_pi_phi
 
-                    Lfh = grad_h_phi @ Phi_i @ f_x    # (1,1)
+                    Lfh = grad_h_phi @ (Phi_i @ f_x - f_pi_phi)    # (1,1)
                     Lgh = grad_h_phi @ Phi_i @ g_x    # (1,2)
                     
                     if not (np.all(np.isfinite(Lgh)) and np.all(np.isfinite(Lfh))):
@@ -812,9 +858,24 @@ class BackupCBFQP:
         # 6) Backup set constraint at final time
         phi_T = phi_b[-1].reshape(-1, 1)
         Phi_T = Phi_b[-1]
+        
+        # self.robot.set_terminal_backup_context(
+        #     None if no_occ else self.occlusion_scenarios,
+        #     self.T_horizon,
+        #     kappa=self.kappa,
+        #     rho_T=0.1
+        # )
+        term_scn = None if no_occ else self.occlusion_scenarios[0]
+        self.robot.set_terminal_backup_context(
+            term_scn,
+            self.T_horizon,
+            kappa=self.kappa,
+            rho_T=0.5
+        )
 
         h_b_T = self.robot.h_b_stop(phi_T)
         grad_h_b_T = self.robot.grad_h_b_stop(phi_T)
+        # print(f"h_b_T: {h_b_T}, grad_h_b_T: {grad_h_b_T}")
 
         Lfh_b_T = grad_h_b_T @ Phi_T @ self.robot.f(robot_state)
         Lgh_b_T = grad_h_b_T @ Phi_T @ self.robot.g(robot_state)
@@ -872,19 +933,20 @@ class BackupCBFQP:
         self.status = self.cbf_controller.status
 
         if self.status != 'optimal':
-            print("loop1 in")
-            if (not no_occ) and hasattr(self.robot, "backup_input_occlusion"):
-                print("loop2 in")
-                return self.robot.backup_input_occlusion(robot_state, self.occlusion_scenarios)
-            elif hasattr(self.robot, "backup_input"):
-                print("loop3 in")
-                return self.robot.backup_input(robot_state)
-            elif hasattr(self.robot, "stop"):
-                print("loop4 in")
-                return self.robot.stop(robot_state)
-            else:
-                print("loop5 in")
-                return np.zeros((2, 1))
+            # print("loop1 in")
+            # if (not no_occ) and hasattr(self.robot, "backup_input_occlusion"):
+            #     print("loop2 in")
+            #     return self.robot.backup_input_occlusion(robot_state, self.occlusion_scenarios)
+            # elif hasattr(self.robot, "backup_input"):
+            #     print("loop3 in")
+            #     return self.robot.backup_input(robot_state)
+            # elif hasattr(self.robot, "stop"):
+            #     print("loop4 in")
+            #     return self.robot.stop(robot_state)
+            # else:
+            #     print("loop5 in")
+            #     return np.zeros((2, 1))
+            raise InfeasibleError("QP infeasible")
             
         # if self.status != 'optimal':
         #     return (self.robot.backup_input_occlusion(robot_state, self.occlusion_scenarios)

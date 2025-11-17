@@ -488,3 +488,56 @@ class BaseRobotDyn(BaseRobot):
                 except Exception:
                     pass
 
+    def set_occ_barrier_fn(self, fn):
+        """
+        Forward occlusion barrier callback into the underlying robot model
+        (e.g., DoubleIntegrator2D).
+        """
+        if hasattr(self.robot, "set_occ_barrier_fn"):
+            self.robot.set_occ_barrier_fn(fn)
+        else:
+            raise AttributeError("Underlying robot does not support set_occ_barrier_fn")
+        
+    # robots/base_robot_dyn.py (혹은 BaseRobotDyn 정의된 파일)
+
+    def set_terminal_backup_context(self, occlusion_scenarios, T, kappa=None, rho_T=0.05):
+        """
+        BackupCBFQP가 터미널 백업 컨텍스트를 주입할 때
+        내부 실제 로봇(예: DoubleIntegrator2D)으로 전달.
+        내부 모델에 해당 메서드가 없으면 안전한 no-op 컨텍스트를 저장해 둠.
+        """
+        inner = getattr(self, "robot", None)
+        if inner is not None and hasattr(inner, "set_terminal_backup_context"):
+            return inner.set_terminal_backup_context(occlusion_scenarios, T, kappa=kappa, rho_T=rho_T)
+
+        # fallback no-op (velocity 기반 백업으로 자동 폴백되도록 상태만 저장)
+        self._term_occ_scenarios = occlusion_scenarios if occlusion_scenarios else []
+        self._term_T = float(T)
+        self._term_kappa = kappa
+        self._term_rho = float(rho_T)
+        return None
+
+    def h_b_stop(self, X):
+        """
+        터미널 백업 집합 값 h_b(x_T).
+        내부 모델이 구현했으면 그대로 위임, 없으면 속도 기반 폴백을 사용.
+        """
+        inner = getattr(self, "robot", None)
+        if inner is not None and hasattr(inner, "h_b_stop"):
+            return inner.h_b_stop(X)
+
+        # fallback: v_safe^2 - ||v||^2
+        v_sq = float(X[2, 0]**2 + X[3, 0]**2)
+        v_safe_sq = (0.3)**2
+        return v_safe_sq - v_sq
+
+    def grad_h_b_stop(self, X):
+        """
+        h_b_stop의 그래디언트.
+        내부 모델이 구현했으면 그대로 위임, 없으면 속도 기반 폴백의 기울기 사용.
+        """
+        inner = getattr(self, "robot", None)
+        if inner is not None and hasattr(inner, "grad_h_b_stop"):
+            return inner.grad_h_b_stop(X)
+
+        return np.array([[0, 0, -2 * X[2, 0], -2 * X[3, 0]]])
