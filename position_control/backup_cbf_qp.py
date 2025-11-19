@@ -25,7 +25,7 @@ class BackupCBFQP:
         self.debug = bool(self.robot_spec.get('debug_backup_qp', False))
 
         # Backup CBF parameters
-        self.T_horizon = 2.0   # backup time T
+        self.T_horizon = 3.0   # backup time T
         self.dt_backup = 0.05   # backup trajectory sampling time step
         self.alpha = 1.0       # Class-K function
 
@@ -165,15 +165,17 @@ class BackupCBFQP:
         dx_o = x - c[0]
         dy_o = y - c[1]
         # safe if outside expanded disk (plus robot radius)
-        h3 = dx_o*dx_o + dy_o*dy_o - (R_occ + R + R_o)**2
+        h3 = np.sqrt(dx_o*dx_o + dy_o*dy_o - (R_occ + R + R_o)**2)
 
         h_i = np.array([h1, h2, h3], dtype=float)
+        # print(h_i)
         if not np.all(np.isfinite(h_i)):
             return None, None, None
 
         # log-sum-exp soft-max
         M = h_i.size
         max_h = np.max(h_i)
+        # print(max_h)
         z = np.exp(kappa * (h_i - max_h))
         Z = np.sum(z)
         if not np.isfinite(Z) or Z <= 0.0:
@@ -181,7 +183,7 @@ class BackupCBFQP:
 
         lse = max_h + np.log(Z)
         h_tilde = (lse - np.log(M)) / kappa
-
+        # print(h_tilde)
         # gradient:
         # ∂h1/∂x = a1
         # ∂h2/∂x = a2
@@ -190,7 +192,10 @@ class BackupCBFQP:
         dh1 = a1
         dh2 = a2
         # dh3 = np.array([2.0 * dx_s, 2.0 * dy_s])
-        dh3 = 2.0 * np.array([dx_o, dy_o])
+        # dh3 = 2.0 * np.array([dx_o, dy_o])
+        eps = 1e-9
+        dh3 = (1.0 / (h3 + eps)) * np.array([dx_o, dy_o])
+        
 
         grads = np.vstack([dh1, dh2, dh3])  # (4,2)
 
@@ -804,6 +809,7 @@ class BackupCBFQP:
                     Phi_i = Phi_b[i]
 
                     pos_i = phi_i[0:2]  # (2,1)
+                    # print(f"pos_i : {pos_i}")
 
                     h_tilde, grad_pos, _ = self._occlusion_barrier_softmax_curved(
                         pos_i, scenario, tau

@@ -268,7 +268,7 @@ def single_agent_main(controller_type):
     model = 'DoubleIntegrator2D' # SingleIntegrator2D, DoubleIntegrator2D, DynamicUnicycle2D, KinematicBicycle2D, KinematicBicycle2D_C3BF, KinematicBicycle2D_DPCBF, Quad2D
 
     waypoints = [
-         [8, 7.5, 0],
+         [10, 7.5, 0],
          [20, 7.5, 0],
     ]
 
@@ -293,7 +293,7 @@ def single_agent_main(controller_type):
     #     [8.0, 5.0, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
-    # Supermarket Scenario
+    # # Supermarket Scenario
     # known_obs = np.array([
     #     [8.0, 5.0, 0.5],  # obstacle 1
     #     [10.0, 7.0, 0.5],  # obstacle 2
@@ -306,10 +306,10 @@ def single_agent_main(controller_type):
     #     [24.0, 12.0, 0.5],  # obstacle 7
     # ])
     ## LoS scenario static/dyn
-    known_obs = np.array([
-        [15.0, 7.5, 0.5],  # obstacle 1
-    ])
-    # # Crowd Scenario
+    # known_obs = np.array([
+    #     [15.0, 7.5, 0.5],  # obstacle 1
+    # ])
+    # Crowd Scenario
     # known_obs = np.array([     
     #     [8.0, 1.5, 0.3],    # obstacle 2
     #     [9.0, 7.8, 0.3],    # obstacle 3
@@ -338,28 +338,28 @@ def single_agent_main(controller_type):
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
     ## wall w/ straight dyn obs
-    # known_obs = np.array([
-    #     [12.0, 5.0, 0.6],  # obstacle 3
-    #     [13.0, 5.5, 0.6],  # obstacle 5
-    #     [14.0, 6.0, 0.6],  # obstacle 7
-    #     [15.0, 6.5, 0.6],  # obstacle 9
-    #     # [15.5, 2.0, 0.5],  # obstacle 11
-    #     # [2.0, 5.0, 0.5],  # obstacle 13
-    #     # [22.0, 12.0, 0.5],  # obstacle 15
-    # ])
+    known_obs = np.array([
+        [12.0, 5.0, 0.6],  # obstacle 3
+        [13.0, 5.5, 0.6],  # obstacle 5
+        [14.0, 6.0, 0.6],  # obstacle 7
+        [15.0, 6.5, 0.6],  # obstacle 9
+        # [15.5, 2.0, 0.5],  # obstacle 11
+        # [2.0, 5.0, 0.5],  # obstacle 13
+        # [22.0, 12.0, 0.5],  # obstacle 15
+    ])
 
     dynamic_obs = []  
     for i, obs_info in enumerate(known_obs):
         ox, oy, r = obs_info[:3]
-        if i % 2 == 1:
-            vx, vy = -0.2, 0.2
-        else:
-            vx, vy = -0.2, -0.2
-        y_min, y_max = 1.0, 14.0
-        # if i <= 3:
-        #     vx, vy = 0.0, 0.0
+        # if i % 2 == 1:
+        #     vx, vy = -0.2, 0.2
         # else:
-        #     vx, vy = -0.0, 0.5
+        #     vx, vy = -0.2, -0.2
+        y_min, y_max = 1.0, 14.0
+        if i <= 3:
+            vx, vy = 0.0, 0.0
+        else:
+            vx, vy = -0.0, 0.5
         dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
     known_obs = np.array(dynamic_obs)
 

@@ -50,7 +50,7 @@ class DoubleIntegrator2D:
             "Kp": 1.0,    # 비례 (속도 오차)
             "Ki": 0.2,    # 적분
             "Kd": 0.1,    # 미분
-            "aw_limit": 2.0 * self.robot_spec.get("a_max", 1.0)  # anti-windup 한계
+            "aw_limit": 1.0  # anti-windup 한계
         }
         self.occ_margin = 1.0
         # look-ahead 샘플 (백업 입력 설계용 가벼운 프리뷰)
@@ -338,6 +338,7 @@ class DoubleIntegrator2D:
     #         # Collect all facet normals from every occlusion scenario
     #         A_stack = []
     #         for sc in occlusion_scenarios:
+    #             # print("loop in")
     #             tan_risk = sc.get('risk_normal_vec', None)
     #             arc_risk = sc.get('arc_adv', None)
     #             # print(f"tan_risk: {tan_risk} || arc_risk: {arc_risk}")
@@ -351,6 +352,7 @@ class DoubleIntegrator2D:
     #             # print(f"A_all: {A_all} || n_mean: {n_mean}")
     #             # n_norm = np.linalg.norm(n)
     #             v_dot_n = float(v @ n_mean)
+    #             print(f"A_all: {A_all} | n_mean: {n_mean} | v_dot_n: {v_dot_n}")
     #             if v_dot_n > 0.0:
     #                     u -= k_occ * v_dot_n * n_mean
                         
@@ -372,53 +374,152 @@ class DoubleIntegrator2D:
                     
     #     return u.reshape(2, 1)
     
-    def backup_input_occlusion(self, X, occlusion_scenarios, k_d=1.0, k_occ=1.0):
-        """
-        PID 기반 백업 정책:
-        1) occlusion 위험을 보고 도피 목표속도 v_ref 생성
-        2) 현재 속도 v를 v_ref로 추종하는 PID 설계 (출력=가속도 u)
-        3) 기본 감쇠 -k_d v 를 더해 안정화
-        """
-        dt = float(self.dt)
-        a_lim = float(self.robot_spec.get('a_max', 1.0))
+    # def backup_input_occlusion(self, X, occlusion_scenarios, k_d=1.0, k_occ=1.0):
+    #     """
+    #     PID 기반 백업 정책:
+    #     1) occlusion 위험을 보고 도피 목표속도 v_ref 생성
+    #     2) 현재 속도 v를 v_ref로 추종하는 PID 설계 (출력=가속도 u)
+    #     3) 기본 감쇠 -k_d v 를 더해 안정화
+    #     """
+    #     dt = float(self.dt)
+    #     a_lim = float(self.robot_spec.get('a_max', 1.0))
+    #     v_max = float(self.robot_spec.get('v_max', 1.0))
+    #     # v = X[2:4, 0].astype(float)
+    #     v_x = float(X[2, 0])
+    #     v_y = float(X[3, 0])
+    #     v = np.array([v_x, v_y], dtype=float)
+    #     # print(f"current vel: {v} | v_x: {v_x} | v_y: {v_y}")
 
-        # v = X[2:4, 0].astype(float)
-        v_x = float(X[2, 0])
-        v_y = float(X[3, 0])
-        v = np.array([v_x, v_y], dtype=float)
-        # print(f"current vel: {v} | v_x: {v_x} | v_y: {v_y}")
-
-        # 1) 위험 기반 목표 속도
-        v_ref = self._occ_safe_velocity_reference(X, occlusion_scenarios[0])  # (2,)
+    #     # 1) 위험 기반 목표 속도
+    #     v_ref = self._occ_safe_velocity_reference(X, occlusion_scenarios[0])  # (2,)
         
-        # 2) PID on velocity error
-        gains = self.pid_occ_gains
+    #     # 2) PID on velocity error
+    #     gains = self.pid_occ_gains
+    #     e = v - v_ref
+    #     print(f"[BACKUP] v={v}, v_ref={v_ref}, e={e}")
+    #     self.pid_occ["I"] += e * dt
+    #     D = (e - self.pid_occ["e_prev"]) / max(dt, 1e-6)
+    #     self.pid_occ["e_prev"] = e
+
+    #     u_pid = -gains["Kp"] * e - gains["Ki"] * self.pid_occ["I"] - gains["Kd"] * D
+
+    #     # Anti-windup(단순 클램핑)
+    #     aw = gains["aw_limit"]
+    #     self.pid_occ["I"] = np.clip(self.pid_occ["I"], -aw, aw)
+
+    #     # 포화
+    #     u = np.clip(u, -a_lim, a_lim)
+    #     # print(f"u: {u}")
+    #     return u.reshape(2,1)
+    
+    def backup_input_occlusion(self, X, occlusion_scenarios, k_d=0.0, k_occ=1.0, t=None):
+        """
+        개선사항:
+        - dt_eff(가변 스텝) 반영
+        - D: v의 미분을 1차 필터로 사용(기본 Kd=0 권장)
+        - Anti-windup: back-calculation
+        - v_ref 저역통과 + v 한계 가드
+        """
+        import numpy as np
+
+        # --- 초기 상태/파라미터 ---
+        a_lim = float(self.robot_spec.get('a_max', 1.0))
+        v_obs_max = 0.5
+        v_max = float(self.robot_spec.get('v_max', 1.0))
+        gains = self.pid_occ_gains  # dict: Kp, Ki, Kd(옵션), aw_limit, K_aw(옵션), tau_ref(옵션), tau_d(옵션)
+
+        # 내부 상태 초기화
+        if "t_prev" not in self.pid_occ: self.pid_occ["t_prev"] = None
+        if "v_prev" not in self.pid_occ: self.pid_occ["v_prev"] = None
+        if "D_filt" not in self.pid_occ: self.pid_occ["D_filt"] = np.zeros(2, dtype=float)
+        if "v_ref_filt" not in self.pid_occ: self.pid_occ["v_ref_filt"] = None
+        if "I" not in self.pid_occ: self.pid_occ["I"] = np.zeros(2, dtype=float)
+        if "e_prev" not in self.pid_occ: self.pid_occ["e_prev"] = np.zeros(2, dtype=float)
+
+        # --- 실제 적분 간격 ---
+        if t is None or self.pid_occ["t_prev"] is None:
+            dt_eff = float(self.dt)  # 폴백
+        else:
+            dt_eff = max(1e-6, float(t - self.pid_occ["t_prev"]))
+        self.pid_occ["t_prev"] = t
+
+        # --- 현재 속도 ---
+        v = np.array([float(X[2, 0]), float(X[3, 0])], dtype=float)
+
+        # --- 목표 속도 (raw) ---
+        scenario0 = occlusion_scenarios[0] if occlusion_scenarios else None
+        v_ref_raw = self._occ_safe_velocity_reference(X, scenario0).astype(float)  # (2,)
+        # v_ref 필터(스텝 완화)
+        tau_ref = float(gains.get("tau_ref", 0.05))
+        alpha = min(1.0, dt_eff / max(1e-6, tau_ref))
+        if self.pid_occ["v_ref_filt"] is None:
+            v_ref = v_ref_raw.copy()
+            self.pid_occ["v_ref_filt"] = v_ref.copy()
+        else:
+            self.pid_occ["v_ref_filt"] += alpha * (v_ref_raw - self.pid_occ["v_ref_filt"])
+            v_ref = self.pid_occ["v_ref_filt"]
+
+        # 물리 한계 내에서 참조도 클램프
+        v_ref = np.clip(v_ref, -v_obs_max, v_obs_max)
+
+        # --- 오차/미분 ---
         e = v - v_ref
-        # print(f"v: {v} | v_ref: {v_ref} | e: {e}")
-        self.pid_occ["I"] += e * dt
-        D = (e - self.pid_occ["e_prev"]) / max(dt, 1e-6)
-        self.pid_occ["e_prev"] = e
+        print(f"[BACKUP] v={v}, v_ref={v_ref}, e={e}")
+        # v 미분(측정 미분) + 1차 필터
+        if self.pid_occ["v_prev"] is None:
+            dv = np.zeros_like(v)
+        else:
+            dv = (v - self.pid_occ["v_prev"]) / dt_eff
+        self.pid_occ["v_prev"] = v.copy()
 
-        u_pid = -gains["Kp"] * e - gains["Ki"] * self.pid_occ["I"] - gains["Kd"] * D
+        tau_d = float(gains.get("tau_d", 0.05))
+        beta_d = dt_eff / (tau_d + dt_eff)
+        self.pid_occ["D_filt"] = (1.0 - beta_d) * self.pid_occ["D_filt"] + beta_d * dv
+        D = self.pid_occ["D_filt"]
 
-        # Anti-windup(단순 클램핑)
-        aw = gains["aw_limit"]
-        self.pid_occ["I"] = np.clip(self.pid_occ["I"], -aw, aw)
+        # --- PI(+Kd on measurement) 제어 ---
+        # 적분(우선 e 적분)
+        I = self.pid_occ["I"] + e * dt_eff
 
-        # 3) 기본 전역 감쇠(브레이크)
-        u = u_pid - k_d * v
+        # 미포화 제어
+        Kp = float(gains.get("Kp", 1.0))
+        Ki = float(gains.get("Ki", 0.5))
+        Kd = float(gains.get("Kd", 0.0))  # 기본은 0 권장
+        u_unsat = -Kp * e - Ki * I + (-Kd) * D - k_d * v
 
         # 포화
-        u = np.clip(u, -a_lim, a_lim)
-        # print(f"u: {u}")
-        return u.reshape(2,1)
+        u_sat = np.clip(u_unsat, -a_lim, a_lim)
 
-    def f_cl(self, X, occlusion_scenarios=None):
+        # Anti-windup: back-calculation
+        K_aw = float(gains.get("K_aw", 10.0))
+        I += (u_sat - u_unsat) * (1.0 / K_aw) * dt_eff  # 되감기
+
+        # 적분 클램프
+        aw = float(gains.get("aw_limit", 1.0))
+        I = np.clip(I, -aw, aw)
+        self.pid_occ["I"] = I
+
+        # v 한계 가드(속도 제한 근처에서 같은 방향 가속 금지)
+        eps = 1e-4
+        u = u_sat.copy()
+        for i in range(2):
+            if v[i] >= (v_max- eps) and u[i] > 0.0:
+                u[i] = 0.0
+            if v[i] <= (-v_max + eps) and u[i] < 0.0:
+                u[i] = 0.0
+
+        # 디버그
+        # print(f"[BACKUP] v={v}, v_ref={v_ref}, e={e}, u_unsat={u_unsat}, u_sat={u}, dt_eff={dt_eff:.4f}")
+
+        return u.reshape(2, 1)
+
+
+    def f_cl(self, X, occlusion_scenarios=None, t=None):
         """
         System dynamics as using backup policy u_b (Closed-Loop)
         """
         if occlusion_scenarios:
-            u_b = self.backup_input_occlusion(X, occlusion_scenarios)
+            u_b = self.backup_input_occlusion(X, occlusion_scenarios, t=t)
         else:
             u_b = self.backup_input(X)
             
@@ -431,8 +532,8 @@ class DoubleIntegrator2D:
         #     if n > v_max and n > 0.0:
         #         v_pred = v_pred * (v_max / n)
         #         u_b = ((v_pred - v_now) / dt).reshape(2,1)
-                
-        return self.f(X) + self.g(X) @ u_b
+        return np.array([X[2,0], X[3,0], u_b[0,0], u_b[1,0]]).reshape(4,1)   
+        # return self.f(X) + self.g(X) @ u_b
     
         # u_b = self.backup_input(X)
         # return self.f(X) + self.g(X) @ u_b
@@ -471,7 +572,7 @@ class DoubleIntegrator2D:
         # scenarios = getattr(self, "_term_occ_scenarios", [])
         scenario = getattr(self, "_term_occ_scenario", None)
         T = float(getattr(self, "_term_T", 3.0))
-        rho_T = float(getattr(self, "_term_rho", 0.5))
+        rho_T = float(getattr(self, "_term_rho", 0.1))
         
         best_h = np.inf
         best_grad = None
@@ -489,6 +590,7 @@ class DoubleIntegrator2D:
         #         # U_T로부터의 여유: h_tilde - rho_T
         #         return np.min(h_vals) - rho_T
         if scenario is not None:
+            # print("loop in h_b_stop")
             h_tilde, grad_pos, _ = self._occ_barrier(p_T.reshape(2, 1), scenario, tau=T)
             # print(f"h_tilde: {h_tilde}")
             self._term_grad_cache = (grad_pos.reshape(1,2) if grad_pos is not None else None)
@@ -521,6 +623,7 @@ class DoubleIntegrator2D:
             
         gp = getattr(self, "_term_grad_cache", None)
         if gp is not None:
+            # print("loop in grad_h_b_stop")
             if gp.shape == (1,2):
                 # 확장: [grad_pos, 0, 0]
                 return np.hstack([gp, np.array([[0.0, 0.0]])])
@@ -569,17 +672,21 @@ class DoubleIntegrator2D:
         """
         from scipy.integrate import solve_ivp
 
+        if hasattr(self, "pid_occ"):
+            self.pid_occ["t_prev"] = None
+            self.pid_occ["v_prev"] = None
+    
         def augmented_dynamics(t, y):
             x = y[0:4]
             Phi = y[4:].reshape((4, 4))
             
             x_col = x.reshape(-1, 1)
-            x_dot = self.f_cl(x_col, occlusion_scenarios).flatten()
+            x_dot = self.f_cl(x_col, occlusion_scenarios, t=t).flatten()
             Phi_dot = self.F_cl(x) @ Phi
             
             # x_dot = self.f_cl(x.reshape(-1, 1)).flatten()
             # Phi_dot = self.F_cl(x) @ Phi
-            
+            # print(f"[BACKUP] t={t:.2f}, x={x[0]:.2f}, y={x[1]:.2f}, vx={x[2]:.2f}, vy={x[3]:.2f}")
             return np.concatenate([x_dot, Phi_dot.flatten()])
 
         y0 = np.concatenate([x0.flatten(), np.eye(4).flatten()])
