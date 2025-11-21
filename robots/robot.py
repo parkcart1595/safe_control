@@ -669,7 +669,7 @@ class BaseRobot:
             self.ax.add_patch(patch)
             self.occlusion_patches.append(patch)
             
-    def backup_input_occlusion(self, X, occlusion_scenarios, k_d=1.0, k_occ=1.0):
+    def backup_input_occlusion(self, X, occlusion_scenarios, t=None, k_d=1.0, k_occ=1.0):
         """
         Wrapper for occlusion-aware backup policy.
         - If underlying model has backup_input_occlusion: delegate.
@@ -677,7 +677,7 @@ class BaseRobot:
         """
         # underlying robot
         if hasattr(self.robot, "backup_input_occlusion"):
-            return self.robot.backup_input_occlusion(X, occlusion_scenarios, k_d=k_d, k_occ=k_occ)
+            return self.robot.backup_input_occlusion(X, occlusion_scenarios, t=t, k_d=k_d, k_occ=k_occ)
 
         # If only backup_input
         if hasattr(self.robot, "backup_input"):

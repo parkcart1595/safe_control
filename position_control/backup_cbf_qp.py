@@ -141,13 +141,14 @@ class BackupCBFQP:
         pos = np.asarray(pos, float).reshape(2,)
         x, y = pos
 
+        R_occ = pi_adv * float(tau)
         # --- tangent halfspaces (use first 2 rows) ---
         a1, a2 = A[3], A[1]
         beta1, beta2 = b0[3], b0[1]
 
         # safe if outside wedge (plus robot radius margin)
-        h1 = a1 @ pos - beta1 - R
-        h2 = a2 @ pos - beta2 - R
+        h1 = a1 @ pos - beta1 - R - R_occ
+        h2 = a2 @ pos - beta2 - R - R_occ
         
         A_stack = []
         if h1 >=0:
@@ -586,13 +587,13 @@ class BackupCBFQP:
         self.kappa = old_kappa
 
     # BackupCBFQP class 내부 (도우미 추가)
-    def _u_pi_at(self, x, scenarios):
+    def _u_pi_at(self, x, scenarios, t=0.0):
         # 1) 로봇이 백업-at 인터페이스를 주면 사용
         if hasattr(self.robot, "backup_input_at"):
-            return self.robot.backup_input_at(x, scenarios)
+            return self.robot.backup_input_at(x, scenarios,t=t)
         # 2) 시야차단 aware 백업
         if (scenarios is not None) and hasattr(self.robot, "backup_input_occlusion"):
-            u = self.robot.backup_input_occlusion(x, scenarios)
+            u = self.robot.backup_input_occlusion(x, scenarios, t=t)
             if u is not None:
                 return u
         # 3) 일반 백업
@@ -833,7 +834,7 @@ class BackupCBFQP:
                     # f_x = self.robot.f(robot_state)   # (4,1)
                     # g_x = self.robot.g(robot_state)   # (4,2)
                     
-                    u_pi_phi = self._u_pi_at(phi_i, self.occlusion_scenarios)
+                    u_pi_phi = self._u_pi_at(phi_i, self.occlusion_scenarios, t=tau)
                     u_pi_phi = np.asarray(u_pi_phi, dtype=float).reshape(2,1)
                     f_pi_phi = self.robot.f(phi_i) + self.robot.g(phi_i) @ u_pi_phi
 
