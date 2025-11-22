@@ -291,6 +291,8 @@ def single_agent_main(controller_type):
     #     [8.0, 5.5, 0.5],  # obstacle 9
     #     [7.0, 5.0, 0.5],  # obstacle 11
     #     [8.0, 5.0, 0.5],  # obstacle 13
+    #     [7.0, 4.5, 0.5],  # obstacle 11
+    #     [8.0, 4.5, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
     # # Supermarket Scenario
@@ -306,10 +308,10 @@ def single_agent_main(controller_type):
     #     [24.0, 12.0, 0.5],  # obstacle 7
     # ])
     # LoS scenario static/dyn
-    known_obs = np.array([
-        [15.0, 7.5, 0.5],  # obstacle 1
-    ])
-    # Crowd Scenario
+    # known_obs = np.array([
+    #     [15.0, 7.5, 0.5],  # obstacle 1
+    # ])
+    # # Crowd Scenario
     # known_obs = np.array([     
     #     [8.0, 1.5, 0.3],    # obstacle 2
     #     [9.0, 7.8, 0.3],    # obstacle 3
@@ -327,6 +329,23 @@ def single_agent_main(controller_type):
     #     [21.0, 8.9, 0.3],
     #     [22.0, 5.4, 0.3],    # obstacle 1
     # ])
+    known_obs = np.array([     
+        [8.0, 1.5, 0.3],    # obstacle 2
+        [9.0, 7.8, 0.3],    # obstacle 3
+        [10.0, 3.2, 0.3],   # obstacle 4
+        [11.0, 11.9, 0.3],  # obstacle 5
+        # [12.0, 9.1, 0.3],   # obstacle 6
+        [13.0, 2.8, 0.3],   # obstacle 7
+        [14.0, 12.3, 0.3],  # obstacle 2
+        [15.0, 4.7, 0.3],   # obstacle 3
+        # [16.0, 10.6, 0.3],  # obstacle 4
+        [17.0, 8.0, 0.3],   # obstacle 5
+        [18.0, 5.4, 0.3],   # obstacle 6
+        [19.0, 10.0, 0.3],  # obstacle 7
+        [20.0, 6.3, 0.3],   
+        [21.0, 8.9, 0.3],
+        [22.0, 5.4, 0.3],    # obstacle 1
+    ])
     ## Appear Unknown obs in LoS
     # known_obs = np.array([
     #     #[7.0, 6.0, 0.5],  # obstacle 3
@@ -337,7 +356,7 @@ def single_agent_main(controller_type):
     #     [9.5, 9.5, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
-    ## wall w/ straight dyn obs
+    # # wall w/ straight dyn obs
     # known_obs = np.array([
     #     [12.0, 5.0, 0.6],  # obstacle 3
     #     [13.0, 5.5, 0.6],  # obstacle 5
@@ -352,9 +371,9 @@ def single_agent_main(controller_type):
     for i, obs_info in enumerate(known_obs):
         ox, oy, r = obs_info[:3]
         if i % 2 == 1:
-            vx, vy = -0.2, 0.0
+            vx, vy = -0.3, 0.0
         else:
-            vx, vy = -0.2, -0.0
+            vx, vy = -0.2, -0.2
         y_min, y_max = 1.0, 14.0
         # if i <= 3:
         #     vx, vy = 0.0, 0.0

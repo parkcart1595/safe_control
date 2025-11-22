@@ -213,89 +213,6 @@ class DoubleIntegrator2D:
             raise TypeError(f"scenario must be dict, got {type(scenario)}")
         return fn(pos, scenario, tau)
     
-    def _occ_safe_velocity_reference_single(self, X, scenario):
-        """
-        단일 장애물 시나리오에 대해서만 v_ref 생성:
-        tau 프리뷰마다 a=max(0, rho - h_tilde)로 가중합한 (-grad) 방향.
-        """
-        p = X[0:2, 0].astype(float)
-        v = X[2:4, 0].astype(float)
-        rho = float(self.occ_margin)
-        eps = 1e-9
-
-        v_ref = np.zeros(2)
-        for tau in self.occ_tau_preview:
-            p_tau = p + tau * v
-            h_tilde, grad_pos, _ = self._occ_barrier(p_tau.reshape(2,1), scenario, tau=tau)
-            if (h_tilde is None) or (grad_pos is None):
-                continue
-            a = max(0.0, rho - float(h_tilde))
-            if a <= 0.0:
-                continue
-            n = grad_pos.reshape(2,)
-            nrm = np.linalg.norm(n)
-            if nrm < eps:
-                continue
-            v_ref += a * ( - n / nrm )  # 도피: -grad
-
-        # 크기 제한
-        vref_max = float(self.pid_occ_gains.get("vref_max", 0.5))
-        m = np.linalg.norm(v_ref)
-        if m > vref_max and m > 0.0:
-            v_ref = v_ref * (vref_max / m)
-        return v_ref
-
-    
-    def _occ_safe_velocity_reference(self, X, occlusion_scenarios, k_occ=1.0):
-        """
-        여러 시나리오와 소수의 look-ahead tau에서 h_tilde<rho 인 곳의
-        기울기(-grad)를 가중합하여 '도피' 목표 속도 v_ref를 만든다.
-        """
-        p = X[0:2, 0].astype(float)
-        v = X[2:4, 0].astype(float)
-        if not occlusion_scenarios:
-            return np.zeros(2)
-
-        rho = float(self.occ_margin)
-        v_ref = np.zeros(2)
-        eps = 1e-9
-
-        # 가벼운 위치 프리뷰: x_tau ≈ p + tau * v (constant velocity 근사)
-        A_stack = []
-        tan_risk = occlusion_scenarios.get('risk_normal_vec', None)
-        arc_risk = occlusion_scenarios.get('arc_adv', None)
-        # print(f"tan_risk: {tan_risk} || arc_risk: {arc_risk}")
-        A_stack.append(tan_risk)
-        A_stack.append(arc_risk)
-        # print(f"A_stack: {A_stack}")
-        if len(A_stack) > 0:
-            A_all = np.vstack(A_stack)  # (M_tot, 2)
-            # soft aggrgation: use the average normal (signs are already chosen so that they point toward the unsafe side)
-            v_ref = A_all.mean(axis=0)
-            # print(f"A_all: {A_all} || v_ref: {v_ref}")
-                # n_norm = np.linalg.norm(n)
-                # v_dot_n = float(v @ n_mean)
-                # if v_dot_n > 0.0:
-                #         u -= k_occ * v_dot_n * n_mean
-                        
-                # if n_norm > 1e-6:
-                #     n = n / n_norm  # normalized unsafe-direction normal
-                #     v_dot_n = float(v @ n)
-                #     # If v_dot_n <0 means along the unsafe direction
-                #     if v_dot_n > 0.0:
-                #         u -= k_occ * v_dot_n * n
-
-        # saturation
-        # a_max = float(self.robot_spec.get('a_max', 1.0))
-        # norm_u = np.linalg.norm(u)
-        # if norm_u > a_max and norm_u > 0.0:
-        #     u = u * (a_max / norm_u)
-        # a_lim = float(self.robot_spec.get('a_max', 1.0))
-        # u = np.clip(u, -a_lim, a_lim)
-        # print(f"u: {u}")
-
-        return v_ref
-    
     def _occ_safe_velocity_reference_rollout(self, X, scenarios, t):
 
         if (scenarios is None) or (len(scenarios) == 0):
@@ -313,215 +230,57 @@ class DoubleIntegrator2D:
             A    = sc['A']
             b0   = sc['b0']
             vadv = sc['v_adv_max']
+            c = sc['obs_center']
+            R_o = sc['obs_radius']
 
-            # (주의) 코드 일관성을 위해 당신의 curved 함수와 동일 인덱스 사용
-            #       (A[3], A[1])가 접선 반평면이라고 가정
             a1, a2   = A[3], A[1]
             beta1, beta2 = b0[3], b0[1]
-                
-            tan_risk = sc.get('arc_adv', None)
-            # print(f"tan_risk: {tan_risk}")
-            if tan_risk is not None:
-                A_stack.append(tan_risk)
+            
+            x, y = p
+            R_occ = vadv * t
+            dx_o = x - c[0]
+            dy_o = y - c[1]
+            h3 = np.sqrt(dx_o*dx_o + dy_o*dy_o - (R_occ + R + R_o)**2)
+            p_rel = np.array([x - c[0],
+                              y - c[1]])
+            p_rel_mag = np.linalg.norm(p_rel)
+            arc_adv = vadv * p_rel / p_rel_mag
+            arc_adv = arc_adv.flatten()
+
+            # print(f"arc_adv: {arc_adv}")
+            if h3 > 0.0:
+                A_stack.append(arc_adv)
+            # # print(f"tan_risk: {tan_risk}")
 
             T_occ = vadv * t
             # h1,h2: wedge 바깥(안전)일수록 양수
-            h1 = float(a1 @ p - beta1 - T_occ)
-            h2 = float(a2 @ p - beta2 - T_occ)
-            print(f"h1: {h1} | h2: {h2}")
+            h1 = float(a1 @ p - beta1 - R - T_occ)
+            h2 = float(a2 @ p - beta2 - R - T_occ)
+            # print(f"h1: {h1} | h2: {h2}")
             if h1 > 0.0:
-                A_stack.append(a1)
+                norm_a1 = np.linalg.norm(a1)
+                vec_a1 = (a1 / norm_a1) * vadv
+                A_stack.append(vec_a1)
             if h2 > 0.0:
-                A_stack.append(a2)
-            print(f"A_stack: {A_stack}")
+                norm_a2 = np.linalg.norm(a2)
+                vec_a2 = (a2 / norm_a2) * vadv
+                A_stack.append(vec_a2)
+            # print(f"A_stack: {A_stack}")
             if len(A_stack) == 0:
                 return np.zeros(2, dtype=float)
             
             A_all = np.vstack(A_stack)  # (M_tot, 2)
             # print(f"A_all: {A_all}")
-            # soft aggrgation: use the average normal (signs are already chosen so that they point toward the unsafe side)
             v_ref = A_all.mean(axis=0)
             
-            return v_ref
-            
-
-        # for k in range(steps):
-        #     tau = (k + 1) * dt  # 0보다 큰 τ만 사용
-
-        #     # === 모든 시나리오에 대해 h1,h2,h3 검사 ===
-        #     for sc in scenarios:
-        #         A    = sc['A']
-        #         b0   = sc['b0']
-        #         c    = sc['obs_center']
-        #         R_o  = sc['obs_radius']
-        #         vadv = sc['v_adv_max']
-
-        #         # (주의) 코드 일관성을 위해 당신의 curved 함수와 동일 인덱스 사용
-        #         #       (A[3], A[1])가 접선 반평면이라고 가정
-        #         a1, a2   = A[3], A[1]
-        #         beta1, beta2 = b0[3], b0[1]
-                    
-        #         A_stack =[]
-        #         tan_risk = sc['risk_normal_vec']
-        #         A_stack.append(tan_risk)
-
-        #         # h1,h2: wedge 바깥(안전)일수록 양수
-        #         h1 = float(a1 @ p - beta1)
-        #         h2 = float(a2 @ p - beta2)
-        #         if h1 > 0.0:
-        #             A_stack.append(a1)
-        #         if h2 > 0.0:
-        #             A_stack.append(a2)
-                
-        #         A_all = np.vstack(A_stack)  # (M_tot, 2)
-        #         print(f"A_all: {A_all}")
-        #         # soft aggrgation: use the average normal (signs are already chosen so that they point toward the unsafe side)
-        #         v_ref = A_all.mean(axis=0)
-
-        #         dx = p[0] - c[0]; dy = p[1] - c[1]
-        #         d  = np.hypot(dx, dy)
-        #         R_occ = vadv * tau + R + R_o
-        #         if (d > R_occ) and (d > 1e-9):
-        #             # 원호(디스크) 경계의 외향 단위법선
-        #             normals_sum += wa * np.array([dx, dy])
-        #             weight_sum  += wa
-            
-
-        #     # === 초저가 백업입력으로 한 스텝 전진 (정해진 k_d_preview만) ===
-        #     u = -k_d_preview * v
-        #     u = np.clip(u, -a_lim, a_lim)
-        #     v = v + u * dt
-        #     p = p + v * dt
-
-        #     # 시간가중(선택)
-        #     if time_discount > 0.0:
-        #         decay = np.exp(-time_discount * dt)
-        #         wt *= decay; wa *= decay 
-
-        # if weight_sum <= 1e-12:
-        #     return np.zeros(2, dtype=float)
-
-        # n = normals_sum
-        # n_norm = np.linalg.norm(n)
-        # if n_norm <= 1e-9:
-        #     return np.zeros(2, dtype=float)
-
-        # return (vref_max * n / n_norm).astype(float)
+        return v_ref
         
     def backup_input(self, X, k_a=1.0):
         """
         Using stop() function as backup policy
         """
         return self.stop(X, k_a=k_a)
-    
-    #### Backup policy for occlusion-aware adversaries #########
-    # def backup_input_occlusion(self, X, occlusion_scenarios, k_d=1.0, k_occ=1.0):
-    #     """
-    #     Occlusion-aware backup policy:
-    #     - By default, apply velocity damping.
-    #     - If there is a velocity component towards an occluded-unsafe direction, push the velocity away from that direction.
-    #     """
-    #     v = X[2:4, 0].astype(float)
-    #     # u = np.zeros(2)
-    #     u = -k_d * v  # base damping
 
-    #     # if occlusion_scenarios:
-    #     #     # Collect all facet normals from every occlusion scenario
-    #     #     A_stack = []
-    #     #     for sc in occlusion_scenarios:
-    #     #         A = sc.get('A', None)
-    #     #         if A is not None and A.size > 0:
-    #     #             A_stack.append(A)
-    #     #     if len(A_stack) > 0:
-    #     #         A_all = np.vstack(A_stack)  # (M_tot, 2)
-    #     #         # soft aggrgation: use the average normal (signs are already chosen so that they point toward the unsafe side)
-    #     #         n = -A_all.mean(axis=0)
-    #     #         n_norm = np.linalg.norm(n)
-    #     #         if n_norm > 1e-6:
-    #     #             n = n / n_norm  # normalized unsafe-direction normal
-    #     #             v_dot_n = float(v @ n)
-    #     #             # If v_dot_n <0 means along the unsafe direction
-    #     #             if v_dot_n > 0.0:
-    #     #                 u -= k_occ * v_dot_n * n
-        
-    #     if occlusion_scenarios:
-    #         # Collect all facet normals from every occlusion scenario
-    #         A_stack = []
-    #         for sc in occlusion_scenarios:
-    #             # print("loop in")
-    #             tan_risk = sc.get('risk_normal_vec', None)
-    #             arc_risk = sc.get('arc_adv', None)
-    #             # print(f"tan_risk: {tan_risk} || arc_risk: {arc_risk}")
-    #             if tan_risk is not None and tan_risk.size > 0:
-    #                 A_stack.append(tan_risk)
-    #                 A_stack.append(arc_risk)
-    #         if len(A_stack) > 0:
-    #             A_all = np.vstack(A_stack)  # (M_tot, 2)
-    #             # soft aggrgation: use the average normal (signs are already chosen so that they point toward the unsafe side)
-    #             n_mean = A_all.mean(axis=0)
-    #             # print(f"A_all: {A_all} || n_mean: {n_mean}")
-    #             # n_norm = np.linalg.norm(n)
-    #             v_dot_n = float(v @ n_mean)
-    #             print(f"A_all: {A_all} | n_mean: {n_mean} | v_dot_n: {v_dot_n}")
-    #             if v_dot_n > 0.0:
-    #                     u -= k_occ * v_dot_n * n_mean
-                        
-    #             # if n_norm > 1e-6:
-    #             #     n = n / n_norm  # normalized unsafe-direction normal
-    #             #     v_dot_n = float(v @ n)
-    #             #     # If v_dot_n <0 means along the unsafe direction
-    #             #     if v_dot_n > 0.0:
-    #             #         u -= k_occ * v_dot_n * n
-
-    #     # saturation
-    #     # a_max = float(self.robot_spec.get('a_max', 1.0))
-    #     # norm_u = np.linalg.norm(u)
-    #     # if norm_u > a_max and norm_u > 0.0:
-    #     #     u = u * (a_max / norm_u)
-    #     a_lim = float(self.robot_spec.get('a_max', 1.0))
-    #     u = np.clip(u, -a_lim, a_lim)
-    #     # print(f"u: {u}")
-                    
-    #     return u.reshape(2, 1)
-    
-    # def backup_input_occlusion(self, X, occlusion_scenarios, k_d=1.0, k_occ=1.0):
-    #     """
-    #     PID 기반 백업 정책:
-    #     1) occlusion 위험을 보고 도피 목표속도 v_ref 생성
-    #     2) 현재 속도 v를 v_ref로 추종하는 PID 설계 (출력=가속도 u)
-    #     3) 기본 감쇠 -k_d v 를 더해 안정화
-    #     """
-    #     dt = float(self.dt)
-    #     a_lim = float(self.robot_spec.get('a_max', 1.0))
-    #     v_max = float(self.robot_spec.get('v_max', 1.0))
-    #     # v = X[2:4, 0].astype(float)
-    #     v_x = float(X[2, 0])
-    #     v_y = float(X[3, 0])
-    #     v = np.array([v_x, v_y], dtype=float)
-    #     # print(f"current vel: {v} | v_x: {v_x} | v_y: {v_y}")
-    #     p = np.array([float(X[0,0]), float(X[1,0])], dtype=float)
-    #     print(f"current pos: {v} | v_x: {v_x} | v_y: {v_y}")
-    #     # 1) 위험 기반 목표 속도
-    #     v_ref = self._occ_safe_velocity_reference(X, occlusion_scenarios[0])  # (2,)
-        
-    #     # 2) PID on velocity error
-    #     gains = self.pid_occ_gains
-    #     e = v - v_ref
-    #     print(f"[BACKUP] v={v}, v_ref={v_ref}, e={e}")
-    #     self.pid_occ["I"] += e * dt
-    #     D = (e - self.pid_occ["e_prev"]) / max(dt, 1e-6)
-    #     self.pid_occ["e_prev"] = e
-
-    #     u_pid = -gains["Kp"] * e - gains["Ki"] * self.pid_occ["I"] - gains["Kd"] * D
-
-    #     # Anti-windup(단순 클램핑)
-    #     aw = gains["aw_limit"]
-    #     self.pid_occ["I"] = np.clip(self.pid_occ["I"], -aw, aw)
-
-    #     # 포화
-    #     u = np.clip(u, -a_lim, a_lim)
-    #     # print(f"u: {u}")
-    #     return u.reshape(2,1)
     
     def backup_input_occlusion(self, X, occlusion_scenarios, t=None,
                             k_d=1.0, k_occ=1.0):
@@ -534,21 +293,25 @@ class DoubleIntegrator2D:
         gains  = self.pid_occ_gains  # {Kp, Ki, aw_limit, ...}
 
         Kp = float(gains.get("Kp", 1.0))
-        Ki = float(gains.get("Ki", 0.5))
+        Ki = float(gains.get("Ki", 0.2))
         aw = float(gains.get("aw_limit", 1.0))
 
         # 내부상태 초기화
         if "I" not in self.pid_occ: self.pid_occ["I"] = np.zeros(2, dtype=float)
 
-        # --- 현재 속도 ---
         v = np.array([float(X[2,0]), float(X[3,0])], dtype=float)
 
-        # --- 롤아웃 기반 v_ref (여러 시나리오 한 번에 처리) ---
         v_ref = self._occ_safe_velocity_reference_rollout(X, occlusion_scenarios, t)
 
-        # --- PI + 전역 감쇠 ---
+        if "t_prev" not in self.pid_occ: self.pid_occ["t_prev"] = None
+        if self.pid_occ["t_prev"] is None or t is None:
+            dt_eff = float(self.dt)
+        else:
+            dt_eff = max(1e-6, float(t - self.pid_occ["t_prev"]))
+        self.pid_occ["t_prev"] = t
+        
         e = v - v_ref
-        I = self.pid_occ["I"] + e * dt
+        I = self.pid_occ["I"] + e * dt_eff
 
         u_unsat = -Kp * e - Ki * I - k_d * v
 
@@ -576,38 +339,48 @@ class DoubleIntegrator2D:
             u_b = self.backup_input_occlusion(X, occlusion_scenarios, t)
         else:
             u_b = self.backup_input(X)
-            
-        # dt = float(self.dt)
-        # v_max = float(self.robot_spec.get('v_max', np.inf))
-        # if np.isfinite(v_max):
-        #     v_now = X[2:4, 0].astype(float)           # (2,)
-        #     v_pred = v_now + (u_b.reshape(2,) * dt)   # 오일러 예측
-        #     n = np.linalg.norm(v_pred)
-        #     if n > v_max and n > 0.0:
-        #         v_pred = v_pred * (v_max / n)
-        #         u_b = ((v_pred - v_now) / dt).reshape(2,1)
-        return np.array([X[2,0], X[3,0], u_b[0,0], u_b[1,0]]).reshape(4,1)   
-        # return self.f(X) + self.g(X) @ u_b
-    
-        # u_b = self.backup_input(X)
-        # return self.f(X) + self.g(X) @ u_b
 
-    def F_cl(self, X):
-        """
-        Jacobian matrix of f_cl(X)
-        Use for STM calculation
-        As u_b = k_a * (-v), df_cl/dv = -k_a
-        """
-        k_a = 1.0
-        return np.array([
-            [0, 0, 1, 0],
-            [0, 0, 0, 1],
-            [0, 0, -k_a, 0],
-            [0, 0, 0, -k_a]
-        ])
+        return np.array([X[2,0], X[3,0], u_b[0,0], u_b[1,0]]).reshape(4,1)
+    
+    def _dvref_dp_fd(self, X, scenarios, t, eps=1e-3):
+        p = X[0:2,0].astype(float)
+        vref = self._occ_safe_velocity_reference_rollout(X, scenarios, t)
+        J = np.zeros((2,2))
+        for j in range(2):
+            Xp = X.copy(); Xp[j,0] = p[j] + eps
+            vr = self._occ_safe_velocity_reference_rollout(Xp, scenarios, t)
+            J[:,j] = (vr - vref)/eps
+        return J
+    
+    def F_cl(self, X, occlusion_scenarios=None, t=None):
+        Kp = float(self.pid_occ_gains.get("Kp", 1.0))
+        k_d = 1.0
+        A = np.array([[0,0,1,0],[0,0,0,1],[0,0,0,0],[0,0,0,0]], float)
+        Bv = -(Kp + k_d) * np.eye(2)
+        if occlusion_scenarios is not None and t is not None:
+            Jp = self._dvref_dp_fd(X, occlusion_scenarios, t)
+        else:
+            Jp = np.zeros((2,2))
+        lower_left = Kp * Jp
+        F = np.block([[np.zeros((2,2)), np.eye(2)],
+                    [lower_left,      Bv      ]])
+        return F
+
+    # def F_cl(self, X):
+    #     """
+    #     Jacobian matrix of f_cl(X)
+    #     Use for STM calculation
+    #     As u_b = k_a * (-v), df_cl/dv = -k_a
+    #     """
+    #     k_a = 1.0
+    #     return np.array([
+    #         [0, 0, 1, 0],
+    #         [0, 0, 0, 1],
+    #         [0, 0, -k_a, 0],
+    #         [0, 0, 0, -k_a]
+    #     ])
         
-    def set_terminal_backup_context(self, occlusion_scenario, T, kappa=None, rho_T=0.5):
-        # self._term_occ_scenarios = occlusion_scenarios if occlusion_scenarios else []
+    def set_terminal_backup_context(self, occlusion_scenario, T, kappa=None, rho_T=0.1):
         self._term_occ_scenario = occlusion_scenario
         self._term_T = float(T)
         if kappa is not None:
@@ -623,37 +396,16 @@ class DoubleIntegrator2D:
         """
         p_T = X[0:2, 0].astype(float)
 
-        # scenarios = getattr(self, "_term_occ_scenarios", [])
         scenario = getattr(self, "_term_occ_scenario", None)
         T = float(getattr(self, "_term_T", 3.0))
         rho_T = float(getattr(self, "_term_rho", 0.1))
-        
-        best_h = np.inf
-        best_grad = None
 
-        # if scenarios:
-        #     h_vals = []
-        #     for sc in scenarios:
-        #         h_tilde, _, _ = self._occ_barrier(
-        #             p_T.reshape(2,1), sc, tau=T
-        #         )
-        #         print(f"h_tilde: {h_tilde}")
-        #         if h_tilde is not None and np.isfinite(h_tilde):
-        #             h_vals.append(float(h_tilde))
-        #     if len(h_vals) > 0:
-        #         # U_T로부터의 여유: h_tilde - rho_T
-        #         return np.min(h_vals) - rho_T
         if scenario is not None:
             # print("loop in h_b_stop")
             h_tilde, grad_pos, _ = self._occ_barrier(p_T.reshape(2, 1), scenario, tau=T)
-            # print(f"h_tilde: {h_tilde}")
+            # print(f"h_tilde: {h_tilde} | rho_T: {rho_T}")
             self._term_grad_cache = (grad_pos.reshape(1,2) if grad_pos is not None else None)
             return float(h_tilde) - rho_T
-
-        # # # 폴백: 예전 속도 기반(느리게 멈춘 상태)
-        # v_sq = X[2, 0]**2 + X[3, 0]**2
-        # v_safe_sq = (0.3)**2
-        # return v_safe_sq - v_sq
 
     def grad_h_b_stop(self, X):
         """
@@ -662,18 +414,6 @@ class DoubleIntegrator2D:
         전체 상태 그라디언트는 [grad_pos, 0, 0].
         (시나리오 없으면 속도 기반 폴백의 기울기)
         """
-        # p_T = X[0:2, 0].astype(float)
-
-        # # scenarios = getattr(self, "_term_occ_scenarios", [])
-        # scenario = getattr(self, "_term_occ_scenario", None)
-        # T = float(getattr(self, "_term_T", 0.0))
-
-        # if scenario:
-        #     print("loop in")
-        #     h_tilde, grad_pos, _ = self._occ_barrier(p_T.reshape(2, 1), scenario, tau=T)
-        #     # if grad_pos:
-        #     #     # (1,2) -> [grad_pos, 0, 0]
-        #     return np.hstack([grad_pos.reshape(1, 2), np.array([[0.0, 0.0]])])
             
         gp = getattr(self, "_term_grad_cache", None)
         if gp is not None:
@@ -683,42 +423,6 @@ class DoubleIntegrator2D:
                 return np.hstack([gp, np.array([[0.0, 0.0]])])
             # 이미 (1,4) (속도 기반 폴백에서 설정)
             return gp
-        
-        # if scenarios:
-        #     # 최악 시나리오 선택
-        #     best_h = np.inf
-        #     best_grad = None
-        #     for sc in scenarios:
-        #         h_tilde, grad_pos, _ = self._occ_barrier(
-        #             p_T.reshape(2,1), sc, tau=T
-        #         )
-        #         if (h_tilde is not None) and (grad_pos is not None) and np.isfinite(h_tilde):
-        #             if h_tilde < best_h:
-        #                 best_h = float(h_tilde)
-        #                 best_grad = grad_pos.reshape(1,2)
-
-        #     if best_grad is not None:
-        #         # 전체 상태로 확장: [grad_pos, 0, 0]
-        #         return np.hstack([best_grad, np.array([[0.0, 0.0]])])
-
-        # 폴백: 속도 기반
-        #return np.array([[0, 0, -2 * X[2, 0], -2 * X[3, 0]]])
-    
-    ## Min vel terminal set
-    # def h_b_stop(self, X):
-    #     """
-    #     Define Backup Set h_b(x) >= 0. (S_0)
-    #     h_b = v_max^2 - (vx^2 + vy^2) >= 0
-    #     """
-    #     v_sq = X[2, 0]**2 + X[3, 0]**2
-    #     v_safe_sq = (0.3)**2
-    #     return v_safe_sq - v_sq
-
-    # def grad_h_b_stop(self, X):
-    #     """
-    #     Gradient of h_b_stop
-    #     """
-    #     return np.array([[0, 0, -2 * X[2, 0], -2 * X[3, 0]]])
     
     def simulate_backup_trajectory(self, x0, T, dt, occlusion_scenarios=None):
         """
@@ -738,9 +442,6 @@ class DoubleIntegrator2D:
             x_dot = self.f_cl(x_col, occlusion_scenarios, t).flatten()
             Phi_dot = self.F_cl(x) @ Phi
             
-            # x_dot = self.f_cl(x.reshape(-1, 1)).flatten()
-            # Phi_dot = self.F_cl(x) @ Phi
-            # print(f"[BACKUP] t={t:.2f}, x={x[0]:.2f}, y={x[1]:.2f}, vx={x[2]:.2f}, vy={x[3]:.2f}")
             return np.concatenate([x_dot, Phi_dot.flatten()])
 
         y0 = np.concatenate([x0.flatten(), np.eye(4).flatten()])

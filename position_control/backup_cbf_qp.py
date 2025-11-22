@@ -42,80 +42,6 @@ class BackupCBFQP:
                     "(no set_occ_barrier_fn on robot).")
         except Exception as e:
             print(f"[BackupCBFQP][WARN] Failed to inject occ barrier callback: {e}")
-        
-    def _occlusion_barrier_softmax(self, pos, scenario, tau):
-        """
-        Compute soft-max occlusion barrier and its gradient at a backup state.
-
-        Parameters
-        ----------
-        scenario : dict
-            Contains:
-                'A'         : (M, 2) half-space normals
-                'b0'        : (M,) initial offsets
-                'v_adv_max' : float, adversary speed bound
-        tau : float
-            Look-ahead time along the backup trajectory.
-
-        Returns
-        -------
-        h_tilde : float or None
-            Soft-max barrier value. None if invalid.
-        grad_pos : np.ndarray or None, shape (1, 2)
-            Gradient of h_tilde w.r.t. position. None if invalid.
-        """
-        A = scenario['A']      # (M,2)
-        b0 = scenario['b0']    # (M,)
-        v_adv = scenario['v_adv_max']
-        R = self.robot_spec['radius']
-        kappa = self.kappa
-
-        if A.size == 0 or b0.size == 0:
-            return None, None
-        
-        # b_i(τ) = b0_i + v_adv * tau
-        b_tau = b0 + v_adv * tau  # (M,)
-
-        # h_i = a_i^T pos - b_i(τ) - R
-        # pos: (2,1) -> (M,)
-        pos_flat = pos.reshape(2,)
-        h_i = A @ pos_flat - b_tau - R   # (M,)
-        
-        if not np.all(np.isfinite(h_i)):
-            return None, None
-
-        M = h_i.shape[0]
-        if M == 0:
-            return None, None
-
-        # Numerically stable log-sum-exp soft-max over {h_i}
-        max_hi = np.max(h_i)
-        z = np.exp(kappa * (h_i - max_hi))
-        Z = np.sum(z)
-
-        if not np.isfinite(Z) or Z <= 0.0:
-            return None, None
-        
-        lse = max_hi + np.log(Z)
-        h_tilde = (lse - np.log(M)) / kappa
-        
-        # softmax weights
-        # w = np.exp(kappa * h_i)
-        # w /= np.sum(w)
-        # exp_shifted = np.exp(kappa * (h_i - max_hi))
-        # w = exp_shifted / np.sum(exp_shifted)
-
-        w = z / Z  # (M,)
-        if not np.all(np.isfinite(w)):
-            return None, None
-        
-        # grad wrt pos: sum_i w_i * a_i
-        grad_pos = (w[:, None] * A).sum(axis=0, keepdims=True)  # (1,2)
-        
-        if not np.all(np.isfinite(grad_pos)):
-            return None, None
-
-        return float(h_tilde), grad_pos  # grad_pos (1,2)
     
     def _occlusion_barrier_softmax_curved(self, pos, scenario, tau=0.0):
         """
@@ -639,28 +565,6 @@ class BackupCBFQP:
         
     def solve_control_problem(self, robot_state, control_ref, obs_list):
         self.u_ref.value = control_ref['u_ref']
-
-        ######### Only detected obs version ########
-        # if obs_list is None:
-        #     self.status = 'optimal'
-        #     return self.u_ref.value
-        
-        # if isinstance(obs_list, np.ndarray):
-        #     if obs_list.size == 0:
-        #         self.status = 'optimal'
-        #         return self.u_ref.value
-
-        # elif isinstance(obs_list, (list, tuple)):
-        #     if len(obs_list) == 0:
-        #         self.status = 'optimal'
-        #         return self.u_ref.value
-        
-        # no obstacle and no occlusion => nominal
-        # no_obs = (
-        #     (obs_list is None) or
-        #     (isinstance(obs_list, np.ndarray) and obs_list.size == 0) or
-        #     (isinstance(obs_list, (list, tuple)) and len(obs_list) == 0)
-        # )
         
         # 0) Filter obstacles within sensing range
         detected_obs = []
@@ -762,45 +666,6 @@ class BackupCBFQP:
                     A_list.append(A)
                     b_list.append(np.array([[b]]))
                     
-            # for obs in obs_list:
-            #     obs = np.asarray(obs).flatten()
-            #     ox, oy, r_obs = obs[:3]
-
-            #     if len(obs) >= 5:
-            #         vx_o, vy_o = obs[3:5]
-            #     else:
-            #         vx_o, vy_o = 0.0, 0.0
-
-            #     for i in range(1, len(tau_points)):  # tau = 0 제외
-            #         tau = tau_points[i]
-
-            #         phi_i = phi_b[i].reshape(-1, 1)   # (4,1)
-            #         Phi_i = Phi_b[i]                  # (4,4)
-
-            #         obs_pos_tau = np.array([
-            #             [ox + vx_o * tau],
-            #             [oy + vy_o * tau]
-            #         ])
-
-            #         # h^c(x, t+tau) = ||p(τ) - p_obs(τ)||^2 - d_min^2
-            #         d_min = r_obs + self.robot_spec['radius']
-            #         diff = phi_i[0:2] - obs_pos_tau            # (2,1)
-            #         h_i = float(diff.T @ diff - d_min**2)
-
-            #         # ∂h/∂phi = [2 (p - p_obs(τ))^T, 0, 0]
-            #         grad_h_phi = 2.0 * np.hstack([diff.T, np.array([[0.0, 0.0]])])  # (1,4)
-
-            #         # backup CBF chain rule
-            #         f_x = self.robot.f(robot_state)      # (4,1)
-            #         g_x = self.robot.g(robot_state)      # (4,2)
-
-            #         Lfh_i = grad_h_phi @ Phi_i @ f_x     # (1,1)
-            #         Lgh_i = grad_h_phi @ Phi_i @ g_x     # (1,2)
-
-            #         # CBF inequality: L_f h + L_g h u + α h ≥ 0
-            #         A_list.append(-Lgh_i)
-            #         b_list.append(Lfh_i + self.alpha * h_i)
-                    
         # 5) Occlusion-based adversarial constraints (backup CBF along trajectory)
         if not no_occ:
             for scenario in self.occlusion_scenarios:
@@ -815,13 +680,6 @@ class BackupCBFQP:
                     h_tilde, grad_pos, _ = self._occlusion_barrier_softmax_curved(
                         pos_i, scenario, tau
                     )
-                    # if h_tilde is None:
-                    #     continue
-                        
-                    # if h_tilde < 0.0:
-                    #     if self.debug:
-                    #         print(f"[occ] skip at tau={tau:.2f}, h_tilde={h_tilde:.3e}<0")
-                    #     continue
                     
                     if h_tilde is None or grad_pos is None:
                         continue
@@ -830,9 +688,6 @@ class BackupCBFQP:
                     grad_h_phi = np.hstack(
                         [grad_pos, np.array([[0.0, 0.0]])]
                     )  # (1,4)
-
-                    # f_x = self.robot.f(robot_state)   # (4,1)
-                    # g_x = self.robot.g(robot_state)   # (4,2)
                     
                     u_pi_phi = self._u_pi_at(phi_i, self.occlusion_scenarios, t=tau)
                     u_pi_phi = np.asarray(u_pi_phi, dtype=float).reshape(2,1)
@@ -855,29 +710,17 @@ class BackupCBFQP:
                     # CBF form: L_f h + L_g h u + α h ≥ 0  →  -L_g h u ≤ L_f h + α h
                     A_list.append(-Lgh)
                     b_list.append(np.array([[rhs]]))
-
-                    # if (np.all(np.isfinite(Lgh)) and
-                    #     np.all(np.isfinite(Lfh)) and
-                    #     np.isfinite(h_tilde)):
-                    #     A_list.append(-Lgh)
-                    #     b_list.append(Lfh + self.alpha * h_tilde)
                     
         # 6) Backup set constraint at final time
         phi_T = phi_b[-1].reshape(-1, 1)
         Phi_T = Phi_b[-1]
         
-        # self.robot.set_terminal_backup_context(
-        #     None if no_occ else self.occlusion_scenarios,
-        #     self.T_horizon,
-        #     kappa=self.kappa,
-        #     rho_T=0.1
-        # )
         term_scn = None if no_occ else self.occlusion_scenarios[0]
         self.robot.set_terminal_backup_context(
             term_scn,
             self.T_horizon,
             kappa=self.kappa,
-            rho_T=0.5
+            rho_T=0.1
         )
 
         h_b_T = self.robot.h_b_stop(phi_T)
@@ -940,25 +783,6 @@ class BackupCBFQP:
         self.status = self.cbf_controller.status
 
         if self.status != 'optimal':
-            # print("loop1 in")
-            # if (not no_occ) and hasattr(self.robot, "backup_input_occlusion"):
-            #     print("loop2 in")
-            #     return self.robot.backup_input_occlusion(robot_state, self.occlusion_scenarios)
-            # elif hasattr(self.robot, "backup_input"):
-            #     print("loop3 in")
-            #     return self.robot.backup_input(robot_state)
-            # elif hasattr(self.robot, "stop"):
-            #     print("loop4 in")
-            #     return self.robot.stop(robot_state)
-            # else:
-            #     print("loop5 in")
-            #     return np.zeros((2, 1))
             raise InfeasibleError("QP infeasible")
-            
-        # if self.status != 'optimal':
-        #     return (self.robot.backup_input_occlusion(robot_state, self.occlusion_scenarios)
-        #         if not no_occ else
-        #         self.robot.backup_input(robot_state))
-        #     # return self.robot.backup_input(robot_state)
 
         return self.u.value
