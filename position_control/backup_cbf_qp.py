@@ -27,7 +27,7 @@ class BackupCBFQP:
         # Backup CBF parameters
         self.T_horizon = 3.0   # backup time T
         self.dt_backup = 0.05   # backup trajectory sampling time step
-        self.alpha = 1.0       # Class-K function
+        self.alpha = 2.0       # Class-K function
 
         self.setup_control_problem()
         
@@ -92,7 +92,11 @@ class BackupCBFQP:
         dx_o = x - c[0]
         dy_o = y - c[1]
         # safe if outside expanded disk (plus robot radius)
-        h3 = np.sqrt(dx_o*dx_o + dy_o*dy_o - (R_occ + R + R_o)**2)
+        # h3 = np.sqrt(dx_o*dx_o + dy_o*dy_o - (R_occ + R + R_o)**2)
+        d = np.hypot(dx_o, dy_o)
+        R_tot = R + R_o + R_occ
+        h3 = d - R_tot
+        # print(h3)
 
         h_i = np.array([h1, h2, h3], dtype=float)
         # print(h_i)
@@ -121,7 +125,8 @@ class BackupCBFQP:
         # dh3 = np.array([2.0 * dx_s, 2.0 * dy_s])
         # dh3 = 2.0 * np.array([dx_o, dy_o])
         eps = 1e-9
-        dh3 = (1.0 / (h3 + eps)) * np.array([dx_o, dy_o])
+        # dh3 = (1.0 / (h3 + eps)) * np.array([dx_o, dy_o])
+        dh3 = np.array([dx_o, dy_o]) / max(eps, d)
         
 
         grads = np.vstack([dh1, dh2, dh3])  # (4,2)
@@ -131,7 +136,7 @@ class BackupCBFQP:
 
         if not np.all(np.isfinite(grad_pos)):
             return None, None, None
-
+        
         return float(h_tilde), grad_pos, risk_normal_vec
 
     
@@ -478,8 +483,6 @@ class BackupCBFQP:
         )
         tc.collections[0].set_label('true occlusion (LOS)')
 
-        # Curved softmax 0-level set (QP에서 사용하는 approx boundary)
-        # h_tilde(x) = 0 레벨셋을 contour로 그림
         try:
             cs = ax.contour(
                 XX, YY, h_curved,
@@ -512,22 +515,20 @@ class BackupCBFQP:
         # restore kappa
         self.kappa = old_kappa
 
-    # BackupCBFQP class 내부 (도우미 추가)
     def _u_pi_at(self, x, scenarios, t=0.0):
-        # 1) 로봇이 백업-at 인터페이스를 주면 사용
         if hasattr(self.robot, "backup_input_at"):
             return self.robot.backup_input_at(x, scenarios,t=t)
-        # 2) 시야차단 aware 백업
+
         if (scenarios is not None) and hasattr(self.robot, "backup_input_occlusion"):
             u = self.robot.backup_input_occlusion(x, scenarios, t=t)
             if u is not None:
                 return u
-        # 3) 일반 백업
+
         if hasattr(self.robot, "backup_input"):
             u = self.robot.backup_input(x)
             if u is not None:
                 return u
-        # 4) 끝수단
+
         if hasattr(self.robot, "stop"):
             return self.robot.stop(x)
         return np.zeros((2,1), dtype=float)

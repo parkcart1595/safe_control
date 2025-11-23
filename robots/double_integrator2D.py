@@ -47,10 +47,10 @@ class DoubleIntegrator2D:
         }
         
         self.pid_occ_gains = {
-            "Kp": 1.0,    # 비례 (속도 오차)
-            "Ki": 0.2,    # 적분
-            "Kd": 0.1,    # 미분
-            "aw_limit": 1.0  # anti-windup 한계
+            "Kp": 1.0,
+            "Ki": 0.2,
+            "Kd": 0.1,
+            "aw_limit": 1.0
         }
         self.occ_margin = 0.1
 
@@ -198,11 +198,6 @@ class DoubleIntegrator2D:
     
     #### Backup CBF ####
     def set_occ_barrier_fn(self, fn):
-        """
-        외부(백업 컨트롤러)에서 curved occlusion barrier 함수를 주입함.
-        기대 시그니처: fn(pos:(2,1) or (2,), scenario:dict, tau:float)
-        -> (h_tilde:float or None, grad_pos:(1,2) or None, risk_vec: (M,2) or None)
-        """
         self._occ_barrier_fn = fn
 
     def _occ_barrier(self, pos, scenario, tau=0.0):
@@ -217,8 +212,7 @@ class DoubleIntegrator2D:
 
         if (scenarios is None) or (len(scenarios) == 0):
             return np.zeros(2, dtype=float)
-
-        # 현재 상태
+        
         p = np.array([float(X[0,0]), float(X[1,0])], dtype=float)
         v = np.array([float(X[2,0]), float(X[3,0])], dtype=float)
 
@@ -240,7 +234,10 @@ class DoubleIntegrator2D:
             R_occ = vadv * t
             dx_o = x - c[0]
             dy_o = y - c[1]
-            h3 = np.sqrt(dx_o*dx_o + dy_o*dy_o - (R_occ + R + R_o)**2)
+            d = np.hypot(dx_o, dy_o)
+            R_tot = R + R_o + R_occ
+            h3 = d - R_tot
+            # h3 = np.sqrt(dx_o*dx_o + dy_o*dy_o - (R_occ + R + R_o)**2)
             p_rel = np.array([x - c[0],
                               y - c[1]])
             p_rel_mag = np.linalg.norm(p_rel)
@@ -315,14 +312,13 @@ class DoubleIntegrator2D:
 
         u_unsat = -Kp * e - Ki * I - k_d * v
 
-        # 가속 포화
         u = np.clip(u_unsat, -a_lim, a_lim)
 
-        # anti-windup (단순 클램프)
+        # anti-windup
         I = np.clip(I, -aw, aw)
         self.pid_occ["I"] = I
 
-        # v 제한 근처 가속금지(같은 방향)
+        # limite acceleration when near v_max
         eps = 1e-6
         for i in range(2):
             if v[i] >= (v_max - eps) and u[i] > 0.0: u[i] = 0.0
@@ -389,11 +385,7 @@ class DoubleIntegrator2D:
         self._term_grad_cache = None
     
     def h_b_stop(self, X):
-        """
-        터미널 백업 집합 조건:
-        h_b = min_s h_tilde_curved(p_T; tau=T) - rho_T
-        (시나리오가 없으면 기존 속도 기반 안전셋으로 폴백)
-        """
+
         p_T = X[0:2, 0].astype(float)
 
         scenario = getattr(self, "_term_occ_scenario", None)
@@ -408,20 +400,12 @@ class DoubleIntegrator2D:
             return float(h_tilde) - rho_T
 
     def grad_h_b_stop(self, X):
-        """
-        h_b_stop의 p-그라디언트:
-        argmin 시나리오 s*의 grad_pos(p_T; tau=T)를 사용.
-        전체 상태 그라디언트는 [grad_pos, 0, 0].
-        (시나리오 없으면 속도 기반 폴백의 기울기)
-        """
-            
         gp = getattr(self, "_term_grad_cache", None)
         if gp is not None:
             # print("loop in grad_h_b_stop")
             if gp.shape == (1,2):
                 # 확장: [grad_pos, 0, 0]
                 return np.hstack([gp, np.array([[0.0, 0.0]])])
-            # 이미 (1,4) (속도 기반 폴백에서 설정)
             return gp
     
     def simulate_backup_trajectory(self, x0, T, dt, occlusion_scenarios=None):
@@ -440,12 +424,12 @@ class DoubleIntegrator2D:
             
             x_col = x.reshape(-1, 1)
             x_dot = self.f_cl(x_col, occlusion_scenarios, t).flatten()
-            Phi_dot = self.F_cl(x) @ Phi
+            Phi_dot = self.F_cl(x_col, occlusion_scenarios, t) @ Phi
             
             return np.concatenate([x_dot, Phi_dot.flatten()])
 
         y0 = np.concatenate([x0.flatten(), np.eye(4).flatten()])
-        t_eval = np.arange(0, T, dt)
+        t_eval = np.arange(0.0, T + 1e-9, dt)
         
         sol = solve_ivp(
             augmented_dynamics,
