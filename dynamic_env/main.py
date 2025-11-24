@@ -24,7 +24,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
                  dt=0.05,
                  show_animation=False, save_animation=False, show_mpc_traj=False,
                  enable_rotation=True, raise_error=False,
-                 ax=None, fig=None, env=None):
+                 ax=None, fig=None, env=None, rand_seed=42):
         super().__init__(X0, robot_spec,
                          controller_type=controller_type,
                          dt=dt,
@@ -46,6 +46,9 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         self.dyn_obs_patch = None # will be initialized after the first step
         self.init_obs_info = None
         self.init_obs_circle = None
+        
+        self._rng = np.random.default_rng(rand_seed)
+        self.obs_meta = None
     
     def setup_robot(self, X0):
         from dynamic_env.robot import BaseRobotDyn
@@ -53,24 +56,155 @@ class LocalTrackingControllerDyn(LocalTrackingController):
             X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
         
     # Update dynamic obs position
-    def step_dyn_obs(self):
-        """if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step"""
-        if len(self.obs) != 0 and self.obs.shape[1] >= 7:
-            for i, obs_info in enumerate(self.obs):
-                # obs_info = [x, y, r, vx, vy, y_min, y_max]
-                self.obs[i, 0] += self.obs[i, 3] * self.dt  # x += vx*dt (if vx != 0)
-                self.obs[i, 1] += self.obs[i, 4] * self.dt  # y += vy*dt
+    # def step_dyn_obs(self):
+    #     """if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step"""
+    #     if len(self.obs) != 0 and self.obs.shape[1] >= 7:
+    #         for i in enumerate(self.obs):
+    #             x, y, r, vx, vy, y_min, y_max = self.obs[i, :7]
+    #             mode = int(self.obs[i, 7]) if self.obs.shape[1] >= 8 else 0
+    #             v_max = float(self.obs[i, 8]) if self.obs.shape[1] >= 9 else np.hypot(vx, vy)
+    #             theta = float(self.obs[i, 9]) if self.obs.shape[1] >= 10 else float(np.arctan2(vy, vx))
 
-                # Flip velocity if it hits top or bottom
-                y_min = self.obs[i, 5]
-                y_max = self.obs[i, 6]
-                if self.obs[i, 1] >= y_max:
-                    self.obs[i, 1] = y_max
-                    self.obs[i, 4] = -abs(self.obs[i, 4])  # flip to negative
-                elif self.obs[i, 1] <= y_min:
-                    self.obs[i, 1] = y_min
-                    self.obs[i, 4] = abs(self.obs[i, 4])   # flip to positive
+    #             if mode == 1:
+    #                 # ---- 랜덤워커: 방향만 부드럽게 요동 ----
+    #                 # 작은 방향 노이즈 + 가끔 큰 턴
+    #                 dtheta = self._rng.normal(0.0, 0.15)
+    #                 if self._rng.random() < 0.05:   # 5% 확률로 큰 방향 전환
+    #                     dtheta += self._rng.normal(0.0, 0.7)
+
+    #                 theta += dtheta
+
+    #                 # 속도는 v_max로 유지 (원하면 아래 한 줄을 바꿔 변동 속도도 가능)
+    #                 speed = v_max
+    #                 vx, vy = speed * np.cos(theta), speed * np.sin(theta)
+
+    #                 # 값 되돌려쓰기
+    #                 self.obs[i, 3] = vx
+    #                 self.obs[i, 4] = vy
+    #                 if self.obs.shape[1] >= 10:
+    #                     self.obs[i, 9] = theta
+                        
+    #             # obs_info = [x, y, r, vx, vy, y_min, y_max]
+    #             self.obs[i, 0] += self.obs[i, 3] * self.dt  # x += vx*dt (if vx != 0)
+    #             self.obs[i, 1] += self.obs[i, 4] * self.dt  # y += vy*dt
+
+    #             # Flip velocity if it hits top or bottom
+    #             y_min = self.obs[i, 5]
+    #             y_max = self.obs[i, 6]
+    #             if self.obs[i, 1] >= y_max:
+    #                 self.obs[i, 1] = y_max
+    #                 self.obs[i, 4] = -abs(self.obs[i, 4])  # flip to negative
+    #             elif self.obs[i, 1] <= y_min:
+    #                 self.obs[i, 1] = y_min
+    #                 self.obs[i, 4] = abs(self.obs[i, 4])   # flip to positive
     
+    def set_obs_meta(self, meta_list):
+        """
+        meta_list: 길이 N인 리스트.
+        각 원소는 dict 예) {'mode':0/1, 'v_max':0.35, 'theta':초기각(라드)}
+        - mode=0: 등속 (기존과 동일)
+        - mode=1: 랜덤워커(방향 랜덤 요동)
+        """
+        if not isinstance(meta_list, list):
+            raise ValueError("meta_list must be a list")
+        if len(meta_list) != len(self.obs):
+            raise ValueError("meta_list length must match self.obs rows")
+        self.obs_meta = meta_list
+        
+    def _ensure_obs_meta(self):
+        """메타가 없으면 등속 기본값으로 자동 구성."""
+        if self.obs_meta and len(self.obs_meta) == len(self.obs):
+            return
+        self.obs_meta = []
+        for i in range(len(self.obs)):
+            vx, vy = float(self.obs[i,3]), float(self.obs[i,4])
+            vmag = float(np.hypot(vx, vy))
+            theta0 = float(np.arctan2(vy, vx)) if vmag > 1e-9 else float(self._rng.uniform(-np.pi, np.pi))
+            self.obs_meta.append({'mode': 0, 'v_max': vmag, 'theta': theta0})
+        
+    @staticmethod  
+    def make_random_obstacles7(n_rand, v_obs_max, x_range, y_spawn_range, r_range, y_bounds, seed=42, rand_obs=True):
+        if not rand_obs:
+            return np.empty((0, 7), dtype=float) , []
+        rng = np.random.default_rng(seed)
+        x_min, x_max = x_range
+        y_min_spawn, y_max_spawn = y_spawn_range
+        r_min, r_max = r_range
+        y_min_g, y_max_g = y_bounds
+
+        rows = []
+        metas = []
+        for _ in range(n_rand):
+            x0 = rng.uniform(x_min, x_max)
+            y0 = rng.uniform(y_min_spawn, y_max_spawn)
+            r  = rng.uniform(r_min, r_max)
+            theta0 = rng.uniform(-np.pi, np.pi)
+            if np.cos(theta0) >= 0.0:
+                theta0 += np.pi
+                if theta0 > np.pi:
+                    theta0 -= 2*np.pi
+            vx0, vy0 = v_obs_max*np.cos(theta0), v_obs_max*np.sin(theta0)
+            rows.append([x0, y0, r, vx0, vy0, y_min_g, y_max_g])
+            metas.append({'mode': 1, 'v_max': v_obs_max, 'theta': theta0})
+        return np.array(rows, dtype=float), metas
+    
+    def step_dyn_obs(self):
+        """
+        self.obs: (N,7) = [x, y, r, vx, vy, y_min, y_max]
+        self.obs_meta[i] = {'mode':0/1, 'v_max':..., 'theta':...}
+        - mode=0: 등속 (y경계에서 vy 반사)
+        - mode=1: 랜덤워커 (방향에 소음, 간헐적 큰 턴), y경계에서 반사(각도도 반사)
+        """
+        if len(self.obs) == 0:
+            return
+
+        # 항상 float 2D 보장
+        if not (isinstance(self.obs, np.ndarray) and self.obs.ndim == 2 and self.obs.shape[1] == 7):
+            self.obs = np.array(self.obs, dtype=float).reshape(-1, 7)
+
+        # 메타 없으면 기본값 생성
+        self._ensure_obs_meta()
+
+        for i in range(self.obs.shape[0]):
+            x, y, r, vx, vy, y_min, y_max = self.obs[i, :7]
+            meta = self.obs_meta[i]
+            mode   = int(meta.get('mode', 0))
+            v_max  = float(meta.get('v_max', np.hypot(vx, vy)))
+            theta  = float(meta.get('theta', np.arctan2(vy, vx) if v_max>1e-9 else 0.0))
+
+            if mode == 1:
+                # --- 랜덤워커: 방향에 소음 + 간헐적 큰 턴 ---
+                dtheta = self._rng.normal(0.0, 0.0)          # 작은 방향 요동
+                if self._rng.random() < 0.05:                 # 5% 확률 큰 턴
+                    dtheta += self._rng.normal(0.0, 0.2)
+                theta += dtheta
+                vx, vy = v_max * np.cos(theta), v_max * np.sin(theta)
+                meta['theta'] = theta   # 메타에 최신 각도 저장
+
+            # 위치 업데이트
+            x_new = x + vx * self.dt
+            y_new = y + vy * self.dt
+
+            # y 경계 반사 처리
+            if y_new >= y_max:
+                y_new = y_max
+                vy = -abs(vy)
+                if mode == 1:
+                    meta['theta'] = -meta['theta']            # x축 대칭 반사
+                    vx, vy = v_max*np.cos(meta['theta']), v_max*np.sin(meta['theta'])
+            elif y_new <= y_min:
+                y_new = y_min
+                vy =  abs(vy)
+                if mode == 1:
+                    meta['theta'] = -meta['theta']
+                    vx, vy = v_max*np.cos(meta['theta']), v_max*np.sin(meta['theta'])
+
+            # 쓰기
+            self.obs[i, 0] = x_new
+            self.obs[i, 1] = y_new
+            self.obs[i, 3] = vx
+            self.obs[i, 4] = vy
+        
     def render_dyn_obs(self):
         if len(self.obs_vel_arrows) != len(self.obs):
             for arrow in self.obs_vel_arrows:
@@ -299,21 +433,21 @@ def single_agent_main(controller_type):
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
     # Supermarket Scenario
-    # known_obs = np.array([
-    #     [8.0, 5.0, 0.5],  # obstacle 1
-    #     [10.0, 7.0, 0.5],  # obstacle 2
-    #     [12.0, 11.0, 0.5],  # obstacle 3
-    #     [14.0, 6.5, 0.5],  # obstacle 4
-    #     [16.0, 3.0, 0.5],  # obstacle 5
-    #     [18.0, 7.5, 0.5],  # obstacle 6
-    #     [20.0, 8.9, 0.5],  # obstacle 6
-    #     [22.0, 10.6, 0.5],  # obstacle 6
-    #     [24.0, 12.0, 0.5],  # obstacle 7
-    # ])
-    # LoS scenario static/dyn
     known_obs = np.array([
-        [15.0, 7.5, 0.5],  # obstacle 1
+        [8.0, 5.0, 0.5],  # obstacle 1
+        [10.0, 7.0, 0.5],  # obstacle 2
+        [12.0, 11.0, 0.5],  # obstacle 3
+        [14.0, 6.5, 0.5],  # obstacle 4
+        [16.0, 3.0, 0.5],  # obstacle 5
+        [18.0, 7.5, 0.5],  # obstacle 6
+        [20.0, 8.9, 0.5],  # obstacle 6
+        [22.0, 10.6, 0.5],  # obstacle 6
+        [24.0, 12.0, 0.5],  # obstacle 7
     ])
+    # LoS scenario static/dyn
+    # known_obs = np.array([
+    #     [15.0, 7.5, 0.5],  # obstacle 1
+    # ])
     # Crowd Scenario
     # known_obs = np.array([     
     #     [8.0, 1.5, 0.3],    # obstacle 2
@@ -370,20 +504,35 @@ def single_agent_main(controller_type):
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
 
+    RAND_OBS_ENABLE = True
     dynamic_obs = []  
     for i, obs_info in enumerate(known_obs):
         ox, oy, r = obs_info[:3]
-        if i % 2 == 1:
-            vx, vy = -0.2, -0.2
+        if i % 2 == 0:
+            vx, vy = -0.15, -0.15
         else:
-            vx, vy = -0.2, 0.2
+            vx, vy = -0.15, 0.15
         y_min, y_max = 1.0, 14.0
         # if i <= 3:
         #     vx, vy = 0.0, 0.0
         # else:
         #     vx, vy = -0.0, 0.5
         dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
-    known_obs = np.array(dynamic_obs)
+    known_obs = np.array(dynamic_obs, dtype=float)
+
+    rand_rows, rand_meta = LocalTrackingControllerDyn.make_random_obstacles7(
+        n_rand=10,
+        v_obs_max=0.5,
+        x_range=(15.0, 25.0),
+        y_spawn_range=(0.0, 15.0),
+        r_range=(0.2, 0.25),
+        y_bounds=(0.0, 15.0),
+        seed=42,
+        rand_obs= RAND_OBS_ENABLE,
+    )
+            
+    if rand_rows.size:
+        known_obs = np.vstack([known_obs, rand_rows])
 
     env_width = 24.0
     env_height = 15.0
@@ -470,10 +619,20 @@ def single_agent_main(controller_type):
                                                   env=env_handler)
 
     # Set obstacles
-    tracking_controller.obs = known_obs
+    tracking_controller.obs = known_obs.astype(float)
+    N_const = known_obs.shape[0] - rand_rows.shape[0]
+    const_meta = []
+    for row in known_obs[:N_const]:
+        vx, vy = float(row[3]), float(row[4])
+        vmag = float(np.hypot(vx, vy))
+        theta0 = float(np.arctan2(vy, vx)) if vmag > 1e-9 else 0.0
+        const_meta.append({'mode': 0, 'v_max': vmag, 'theta': theta0})
+
+    meta = const_meta + rand_meta
+    tracking_controller.set_obs_meta(meta)
     # tracking_controller.set_unknown_obs(unknown_obs)
     tracking_controller.set_waypoints(waypoints)
-    unexpected_beh = tracking_controller.run_all_steps(tf=100)
+    unexpected_beh = tracking_controller.run_all_steps(tf=300)
 
 if __name__ == "__main__":
     from utils import plotting
