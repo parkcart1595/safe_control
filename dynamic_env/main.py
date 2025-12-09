@@ -152,13 +152,12 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         """
         self.obs: (N,7) = [x, y, r, vx, vy, y_min, y_max]
         self.obs_meta[i] = {'mode':0/1, 'v_max':..., 'theta':...}
-        - mode=0: 등속 (y경계에서 vy 반사)
-        - mode=1: 랜덤워커 (방향에 소음, 간헐적 큰 턴), y경계에서 반사(각도도 반사)
+        - mode=0: constant velocity
+        - mode=1: random agents
         """
         if len(self.obs) == 0:
             return
 
-        # 항상 float 2D 보장
         if not (isinstance(self.obs, np.ndarray) and self.obs.ndim == 2 and self.obs.shape[1] == 7):
             self.obs = np.array(self.obs, dtype=float).reshape(-1, 7)
 
@@ -327,6 +326,19 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         else:
             u = self.pos_controller.solve_control_problem(
                 self.robot.X, control_ref, self.nearest_multi_obs)
+
+        # Guard against None/NaN control output; mark infeasible so tracking stops.
+        try:
+            invalid_u = (u is None) or (not np.all(np.isfinite(u)))
+        except Exception:
+            invalid_u = True
+        if invalid_u:
+            try:
+                self.pos_controller.status = 'infeasible'
+            except Exception:
+                pass
+            u = self.robot.stop()
+
         plt.figure(self.fig.number)
 
         # 6. Draw collision cones/parabolas for C3BF/DPCBF
@@ -344,21 +356,13 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         # 8. Raise an error if the QP is infeasible, or the robot collides with the obstacle
         collide = self.is_collide_unknown()
         
-        if self.pos_controller_type == 'backup_cbf_qp':
-            if collide:
-                self.draw_infeasible()
-                print("Collision detected !!")
-                if self.raise_error:
-                    raise InfeasibleError("Collision detected !!")
-                return -2
-        else:
-            if self.pos_controller.status != 'optimal' or collide:
-                cause = "Collision" if collide else "Infeasible"
-                self.draw_infeasible()
-                print(f"{cause} detected !!")
-                if self.raise_error:
-                    raise InfeasibleError(f"{cause} detected !!")
-                return -2
+        if self.pos_controller.status != 'optimal' or collide:
+            cause = "Collision" if collide else "Infeasible"
+            self.draw_infeasible()
+            print(f"{cause} detected !!")
+            if self.raise_error:
+                raise InfeasibleError(f"{cause} detected !!")
+            return -2
 
         # 9. Step the robot
         self.robot.step(u, self.u_att)
@@ -367,12 +371,10 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         if hasattr(self.robot, "update_occlusion_polygons") and \
            hasattr(self.pos_controller, "occlusion_scenarios"):
 
-            use_curved = hasattr(self.pos_controller, "_occlusion_barrier_softmax_curved")
             kappa = getattr(self.pos_controller, "kappa", 10.0)
 
             self.robot.update_occlusion_polygons(
                 self.pos_controller.occlusion_scenarios,
-                use_curved=False,
                 kappa=kappa,
                 show_true_occ=True,
                 show_true_occ_T=True,
@@ -613,7 +615,7 @@ def single_agent_main(controller_type):
                                                   controller_type=controller_type,
                                                   dt=dt,
                                                   show_animation=True,
-                                                  save_animation=True,
+                                                  save_animation=False,
                                                   show_mpc_traj=False,
                                                   ax=ax, fig=fig,
                                                   env=env_handler)

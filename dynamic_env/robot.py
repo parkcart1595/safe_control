@@ -601,7 +601,6 @@ class BaseRobotDyn(BaseRobot):
         lst.clear()
         
     def update_occlusion_polygons(self, occlusion_scenarios,
-                                  use_curved=False,
                                   kappa=10.0,
                                   show_true_occ=True,
                                   show_true_occ_T=True,
@@ -614,28 +613,8 @@ class BaseRobotDyn(BaseRobot):
         self._clear_artists(self.occlusion_softmax_contours)
         self._clear_artists(self.occlusion_future_contours)
         self._clear_artists(self._occ_arc_lines)
-        if use_curved==False and show_true_occ==False:
+        if not show_true_occ and not show_true_occ_T and not show_softmax_occ_T:
             return
-
-        # 1) reset previous patches
-        for p in self.occlusion_patches:
-            try:
-                p.remove()
-            except:
-                pass
-        self.occlusion_patches = []
-
-        for coll in self.occlusion_softmax_contours:
-            try:
-                coll.remove()
-            except:
-                pass
-        self.occlusion_softmax_contours = []
-        
-        for coll in getattr(self, "occlusion_future_contours", []):  # <-- U_T 초기화
-            try: coll.remove()
-            except: pass
-        self.occlusion_future_contours = []
 
         if not occlusion_scenarios:
             return
@@ -672,109 +651,53 @@ class BaseRobotDyn(BaseRobot):
                 self.ax.add_patch(patch)
                 self.occlusion_patches.append(patch)
 
-            # # 2) softmax over-approximate boundary
-            # if use_curved:
-            #     if U0 is not None:
-            #         xmin, xmax = U0[:, 0].min(), U0[:, 0].max()
-            #         ymin, ymax = U0[:, 1].min(), U0[:, 1].max()
-            #     else:
-            #         xmin, xmax = poly[:, 0].min(), poly[:, 0].max()
-            #         ymin, ymax = poly[:, 1].min(), poly[:, 1].max()
-
-            #     pad = 1
-            #     xs = np.arange(xmin - pad, xmax + pad, grid_res)
-            #     ys = np.arange(ymin - pad, ymax + pad, grid_res)
-            #     XX, YY = np.meshgrid(xs, ys)
-
-            #     h_field = np.full_like(XX, np.nan, dtype=float)
-            #     for i in range(XX.shape[0]):
-            #         for j in range(XX.shape[1]):
-            #             val = self._curved_softmax_value(
-            #                 (XX[i, j], YY[i, j]),
-            #                 sc, R_s, kappa
-            #             )
-            #             if val is not None and np.isfinite(val):
-            #                 h_field[i, j] = val
-
-            #     try:
-            #         M = 3.0  # num convex constraints
-            #         level = -np.log(M) / kappa # optional
-
-            #         cs = self.ax.contour(
-            #             XX, YY, h_field,
-            #             levels=[0.0],
-            #             colors='red',
-            #             linewidths=2.0,
-            #             zorder=2
-            #         )
-            #         # cs = self.ax.contour(
-            #         #     XX, YY, h_field,
-            #         #     levels=[0.0],
-            #         #     colors='red',
-            #         #     linewidths=2.0,
-            #         #     zorder=2
-            #         # )
-                    
-            #         for coll in cs.collections:
-            #             self.occlusion_softmax_contours.append(coll)
-            #     except Exception:
-            #         pass
-                
-            # ---- 3) U_T (future occlusion) : U0 접선의 법선방향 offset 구현 ----
-            if show_true_occ_T and (T_rollout is not None) and (T_rollout > 0.0):
+            built = None
+            d = None
+            if T_rollout is not None and T_rollout > 0.0:
                 v_adv = float(sc.get('v_adv_max', 0.5))
                 d = float(v_adv * T_rollout)
-
                 built = self._build_occlusion_UT_offset(p, c, R_o, R_s, t1, t2, d, n_arc=80)
-                if built is not None:
-                    UT, aux = built
-                    patchT = patches.Polygon(
-                        UT, closed=True, fill=True,
-                        facecolor="#e41d45", edgecolor='none',
-                        alpha=0.22, zorder=0.9
-                    )
-                    self.ax.add_patch(patchT)
-                    self.occlusion_future_contours.append(patchT)
 
-                    # # (선택) 곡률 강조용 점선 호만 얇게 덧그리기
-                    # outer_arc, inner_arc, f1, f2, q1, q2 = aux
-                    # line1, = self.ax.plot(outer_arc[:,0], outer_arc[:,1],
-                    #                     linestyle=':', linewidth=1.6, color='#2b6cb0', zorder=3)
-                    # line2, = self.ax.plot(inner_arc[:,0], inner_arc[:,1],
-                    #                     linestyle=':', linewidth=1.6, color='#2b6cb0', zorder=3)
-                    # self._occ_arc_lines.extend([line1, line2])
-                # 접선-센싱 원 교점이 없으면(드묾) 아무 것도 그리지 않음 (전체 원 금지)
-            if show_softmax_occ_T:
-                for sc_idx, sc in enumerate(occlusion_scenarios):
+            # ---- 3) U_T (future occlusion) : U0 접선의 법선방향 offset 구현 ----
+            if show_true_occ_T and built is not None:
+                UT, aux = built
+                patchT = patches.Polygon(
+                    UT, closed=True, fill=True,
+                    facecolor="#e41d45", edgecolor='none',
+                    alpha=0.22, zorder=0.9
+                )
+                self.ax.add_patch(patchT)
+                self.occlusion_future_contours.append(patchT)
 
-                    # --- 여기부터 추가: τ=T softmin 경계 그리기 ---
-                    (n1b, beta1), (n2b, beta2), R_eff = self._ut_halfspaces_params(p, c, R_o, t1, t2, d)
+            if show_softmax_occ_T and built is not None:
+                UT, _ = built
+                (n1b, beta1), (n2b, beta2), R_eff = self._ut_halfspaces_params(p, c, R_o, t1, t2, d)
 
-                    xmin, xmax = UT[:, 0].min(), UT[:, 0].max()
-                    ymin, ymax = UT[:, 1].min(), UT[:, 1].max()
-                    pad = 0.75
-                    xs = np.arange(xmin - pad, xmax + pad, grid_res)
-                    ys = np.arange(ymin - pad, ymax + pad, grid_res)
-                    XX, YY = np.meshgrid(xs, ys)
+                xmin, xmax = UT[:, 0].min(), UT[:, 0].max()
+                ymin, ymax = UT[:, 1].min(), UT[:, 1].max()
+                pad = 0.75
+                xs = np.arange(xmin - pad, xmax + pad, grid_res)
+                ys = np.arange(ymin - pad, ymax + pad, grid_res)
+                XX, YY = np.meshgrid(xs, ys)
 
-                    htilde_T = self._softmin_field_UT(
-                        XX, YY, p, c, R_s,
-                        n1b, beta1, n2b, beta2, R_eff,
-                        kappa=float(kappa)
-                    )
+                htilde_T = self._softmin_field_UT(
+                    XX, YY, p, c, R_s,
+                    n1b, beta1, n2b, beta2, R_eff,
+                    kappa=float(kappa)
+                )
 
-                    ut_color = "#f80101ea"
+                ut_color = "#f80101ea"
 
-                    csT = self.ax.contour(
-                        XX, YY, htilde_T,
-                        levels=[0.0],
-                        colors=ut_color,
-                        linestyles='-',
-                        linewidths=1.5,
-                        zorder=5
-                    )
-                    for coll in csT.collections:
-                        self.occlusion_softmax_contours.append(coll)
+                csT = self.ax.contour(
+                    XX, YY, htilde_T,
+                    levels=[0.0],
+                    colors=ut_color,
+                    linestyles='-',
+                    linewidths=1.5,
+                    zorder=5
+                )
+                for coll in csT.collections:
+                    self.occlusion_softmax_contours.append(coll)
                     
         # built = self._build_occlusion_UT_offset(p, c, R_o, R_s, t1, t2, d, n_arc=80)
         # if built is not None:

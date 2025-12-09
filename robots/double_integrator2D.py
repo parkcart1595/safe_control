@@ -283,17 +283,15 @@ class DoubleIntegrator2D:
                             k_d=1.0, k_occ=1.0):
         # print(f"DEBUG: backup_input_occlusion CALLED with t={t}")
 
-        # --- 파라미터 ---
         dt     = float(self.dt)
         a_lim  = float(self.robot_spec.get('a_max', 1.0))
         v_max  = float(self.robot_spec.get('v_max', 1.0))
-        gains  = self.pid_occ_gains  # {Kp, Ki, aw_limit, ...}
+        gains  = self.pid_occ_gains
 
         Kp = float(gains.get("Kp", 1.0))
         Ki = float(gains.get("Ki", 0.2))
         aw = float(gains.get("aw_limit", 1.0))
 
-        # 내부상태 초기화
         if "I" not in self.pid_occ: self.pid_occ["I"] = np.zeros(2, dtype=float)
 
         v = np.array([float(X[2,0]), float(X[3,0])], dtype=float)

@@ -1,7 +1,8 @@
 import numpy as np
 import cvxpy as cp
 import time
-from matplotlib.path import Path
+
+from utils.occlusion import OcclusionUtils
 
 class InfeasibleError(Exception):
     '''
@@ -13,7 +14,7 @@ class InfeasibleError(Exception):
         self.message = message
         super().__init__(self.message)
 
-class BackupCBFQP:
+class BackupCBFQP(OcclusionUtils):
     def __init__(self, robot, robot_spec, num_obs=10, kappa=10.0):
         self.robot = robot
         self.robot_spec = robot_spec
@@ -24,10 +25,19 @@ class BackupCBFQP:
         self.sensing_range = float(self.robot_spec.get('sensing_range', 10.0))
         self.debug = bool(self.robot_spec.get('debug_backup_qp', False))
 
-        # Backup CBF parameters
-        self.T_horizon = 3.0   # backup time T
-        self.dt_backup = 0.05   # backup trajectory sampling time step
-        self.alpha = 2.0       # Class-K function
+        cfg = self.robot_spec.get('backup_cbf', {})
+        # Backup CBF parameters (override-able via robot_spec["backup_cbf"])
+        self.T_horizon = float(cfg.get('T_horizon', 3.0))   # backup time T
+        self.dt_backup = float(cfg.get('dt_backup', 0.05))  # backup trajectory sampling time step
+        self.alpha = float(cfg.get('alpha', 2.0))           # Class-K function
+
+        OcclusionUtils.__init__(
+            self,
+            robot=robot,
+            robot_spec=robot_spec,
+            sensing_range=self.sensing_range,
+            barrier_fn=self._occlusion_barrier_softmax_curved,
+        )
 
         self.setup_control_problem()
         
@@ -138,409 +148,12 @@ class BackupCBFQP:
             return None, None, None
         
         return float(h_tilde), grad_pos, risk_normal_vec
-
-    
-    def _circle_tangents(self, p, c, R):
-        """
-        Compute tangent points from point p to a circle centered at c with radius R.
-
-        t1, t2 :
-            Tangent points on the circle (each (2,))
-            if p is inside/on the circle (no valid tangents).
-        """
-        p = np.asarray(p, dtype=float).reshape(2,)
-        c = np.asarray(c, dtype=float).reshape(2,)
-        v = p - c
-        d2 = float(v @ v)
-        R2 = R * R
-
-        # No tangent if p is inside or on the circle
-        if d2 <= R2:
-            return None, None
-
-        x1, y1 = v
-        x0 = R2 * x1 / d2
-        y0 = R2 * y1 / d2
-        k = R * np.sqrt(d2 - R2) / d2
-
-        # Tangent points in global coordinates
-        t1 = np.array([x0 - y1 * k, y0 + x1 * k]) + c
-        t2 = np.array([x0 + y1 * k, y0 - x1 * k]) + c
-        return t1, t2
-    
-    def _segment_intersects_circle(self, p, x, c, R):
-        """
-        Check if segment [p, x] intersects the circle centered at c with radius R.
-        Used to define 'true' occlusion: line-of-sight blocked by obstacle.
-        """
-        p = np.asarray(p, float)
-        x = np.asarray(x, float)
-        c = np.asarray(c, float)
-
-        d = x - p
-        f = p - c
-
-        a = d @ d
-        b = 2.0 * (f @ d)
-        c_term = f @ f - R**2
-
-        disc = b*b - 4.0*a*c_term
-        if disc < 0.0 or a <= 1e-12:
-            return False
-
-        sqrt_disc = np.sqrt(disc)
-        t1 = (-b - sqrt_disc) / (2.0 * a)
-        t2 = (-b + sqrt_disc) / (2.0 * a)
-
-        # intersection lies on the segment if 0 <= t <= 1
-        return (0.0 <= t1 <= 1.0) or (0.0 <= t2 <= 1.0)
-
-    
-    def _polygon_to_halfspaces(self, poly):
-        """
-        Convert a convex polygon into half-space form: { z | A z <= b }.
-        """
-        poly = np.asarray(poly, dtype=float)
-        M = poly.shape[0]
-        if M < 3:
-            return None, None
-
-        centroid = np.mean(poly, axis=0)
-
-        A_list = []
-        b_list = []
-
-        for i in range(M):
-            p1 = poly[i]
-            p2 = poly[(i + 1) % M]
-            edge = p2 - p1
-            if np.linalg.norm(edge) < 1e-9:
-                continue
-
-             # Outward normal candidate (right-hand normal)
-            n = np.array([edge[1], -edge[0]], dtype=float)
-            n /= np.linalg.norm(n)
-            
-            b = float(n @ p1)
-
-            # Ensure centroid is inside: n^T centroid <= b
-            if n @ centroid > b + 1e-9:
-                n = -n
-                b = -b
-
-            A_list.append(n)
-            b_list.append(b)
-            
-        if len(A_list) == 0:
-            return None, None
-
-        A = np.vstack(A_list)        # (M_eff, 2)
-        b0 = np.array(b_list)        # (M_eff,)
-        
-        if not (np.all(np.isfinite(A)) and np.all(np.isfinite(b0))):
-            return None, None
-        
-        return A, b0
-    
-    def _build_occlusion_scenario(self, robot_state, obs):
-        """
-        Build an occlusion scenario for a single circular obstacle.
-
-        The occlusion region is a wedge from the robot through the tangent points to a far range, then converted to half-spaces.
-
-        scenario :
-            {
-              'A'         : (M_k, 2) half-space normals
-              'b0'        : (M_k,) offsets
-              'v_adv_max' : float, adversary speed bound
-              'poly'      : (4, 2) occlusion polygon vertices
-            }
-            Returns None if no valid occlusion is formed.
-        """
-
-        px = float(robot_state[0, 0])
-        py = float(robot_state[1, 0])
-        p = np.array([px, py])
-
-        obs = np.asarray(obs).flatten()
-        ox, oy, r_obs = obs[:3]
-        c = np.array([ox, oy])
-        R_o = float(r_obs)
-
-        sensing_R = self.sensing_range
-        v_adv = float(self.robot_spec.get('v_adv_max_occ', 0.5))
-        
-        p_rel = np.array([[px - ox], 
-                        [py - oy]])
-        
-        p_rel_mag = np.linalg.norm(p_rel)
-        arc_adv = v_adv * p_rel / p_rel_mag
-        arc_adv = arc_adv.flatten()
-
-        # Ignore obstacle if it is outside sensing range
-        d = np.linalg.norm(c - p)
-        if d >= sensing_R:
-            return None
-
-        # Compute tangent points from robot to obstacle
-        t1, t2 = self._circle_tangents(p, c, R_o)
-        if t1 is None or t2 is None:
-            return None
-
-        # Extend tangent directions to sensing range to form occlusion wedge
-        dir1 = t1 - p
-        n1 = np.linalg.norm(dir1)
-        if n1 < 1e-6:
-            return None
-        dir1 /= n1  # tangent 1 unit vector
-        
-        dir2 = t2 - p
-        n2 = np.linalg.norm(dir2)
-        if n2 < 1e-6:
-            return None
-        dir2 /= n2  # tangenet 2 unit vector
-
-        far1 = p + sensing_R * dir1
-        far2 = p + sensing_R * dir2
-
-        # occlusion polygon: [t1, t2, far2, far1]
-        poly = np.vstack([t1, t2, far2, far1])
-
-        A, b0 = self._polygon_to_halfspaces(poly)
-        if A is None:
-            return None
-        
-        scenario = {
-            'A': A,
-            'b0': b0,
-            'v_adv_max': v_adv,
-            'arc_adv': arc_adv,
-            'poly': poly,
-            ## For arc softmax
-            'robot_pos': p,
-            'obs_center': c,
-            'obs_radius': R_o,
-            't1': t1,
-            't2': t2,
-        }
-        
-        _, _, risk_vec = self._occlusion_barrier_softmax_curved(p, scenario, tau=0.0)
-        
-        risk_vec *= v_adv
-        scenario['risk_normal_vec']= risk_vec
-        
-        return scenario
-    
-    def _point_in_poly(self, pt, poly):
-        # poly: (N,2), pt: (2,)
-        path = Path(poly)
-        return path.contains_point((float(pt[0]), float(pt[1])), radius=1e-12)
-        
-    def _filter_visible_and_build_occ(self, robot_state, obs_list):
-        
-        visible_obs = []
-        occl_scenarios = []
-        wedge_paths = []
-
-        if obs_list is None:
-            return visible_obs, occl_scenarios
-
-        obs_arr = np.array(obs_list, dtype=float)
-        if obs_arr.ndim == 1:
-            obs_arr = obs_arr.reshape(1, -1)
-
-        px, py = float(robot_state[0, 0]), float(robot_state[1, 0])
-        p = np.array([px, py])
-        R_sense2 = self.sensing_range ** 2
-
-        keep = []
-        for k, o in enumerate(obs_arr):
-            if (o[0]-px)**2 + (o[1]-py)**2 <= R_sense2:
-                keep.append(k)
-        if not keep:
-            return visible_obs, occl_scenarios
-
-        obs_arr = obs_arr[keep]
-
-        dists = np.linalg.norm(obs_arr[:, :2] - p[None, :], axis=1)
-        order = np.argsort(dists)
-
-        for idx in order:
-            obs = obs_arr[idx]
-            c = obs[:2]
-
-            occluded = any(self._point_in_poly(c, sc['poly']) for sc in occl_scenarios)
-            if occluded:
-                continue
-
-            visible_obs.append(obs)
-
-            sc = self._build_occlusion_scenario(robot_state, obs)
-            if sc is not None and sc.get('poly') is not None:
-                occl_scenarios.append(sc)
-
-        return visible_obs, occl_scenarios
-
-    def visualize_occlusion_curved_debug(self, robot_state, obs, kappa=None, grid_res=0.05, tau=0.0):
-        """
-        Debug visualization for ONE obstacle:
-          - True occlusion region (LOS-blocked, using circle arcs implicitly)
-          - Curved softmax occlusion set { x | h_tilde_curved(x) <= 0 }
-          - Polygon wedge used to build (A, b0)
-
-        """
-        import matplotlib.pyplot as plt
-
-        if kappa is not None:
-            old_kappa = self.kappa
-            self.kappa = kappa
-        else:
-            old_kappa = self.kappa
-
-        # Robot state & obstacle
-        px = float(robot_state[0, 0])
-        py = float(robot_state[1, 0])
-        p = np.array([px, py])
-
-        obs = np.asarray(obs, dtype=float).flatten()
-        ox, oy, r_obs = obs[:3]
-        c = np.array([ox, oy])
-        R_obs = float(r_obs)
-
-        sensing_R = self.sensing_range
-
-        # Build scenario (includes robot_pos, obs_center, etc.)
-        scenario = self._build_occlusion_scenario(robot_state, obs)
-        if scenario is None:
-            print("[viz] No valid occlusion scenario.")
-            self.kappa = old_kappa
-            return
-
-        poly = scenario['poly']
-
-        # ----- Grid -----
-        margin = sensing_R + 0.5
-        xmin = px - margin
-        xmax = px + margin
-        ymin = py - margin
-        ymax = py + margin
-
-        xs = np.arange(xmin, xmax + grid_res, grid_res)
-        ys = np.arange(ymin, ymax + grid_res, grid_res)
-        XX, YY = np.meshgrid(xs, ys)
-
-        true_occ = np.zeros_like(XX, dtype=bool)
-        h_curved = np.full_like(XX, np.nan, dtype=float)
-
-        # ----- 1) True occlusion region (LOS block) -----
-        for i in range(XX.shape[0]):
-            for j in range(XX.shape[1]):
-                x = np.array([XX[i, j], YY[i, j]])
-
-                if np.linalg.norm(x - p) > sensing_R:
-                    continue
-
-                if self._segment_intersects_circle(p, x, c, R_obs):
-                    true_occ[i, j] = True
-
-        # ----- 2) Curved softmax barrier field h_tilde_curved(x) -----
-        for i in range(XX.shape[0]):
-            for j in range(XX.shape[1]):
-                x = np.array([XX[i, j], YY[i, j]])
-                pos_col = x.reshape(2, 1)
-
-                h_tilde, _, _ = self._occlusion_barrier_softmax_curved(
-                    pos_col,
-                    scenario,
-                    tau=tau
-                )
-                if h_tilde is not None and np.isfinite(h_tilde):
-                    h_curved[i, j] = h_tilde
-
-        # ----- Plot -----
-        fig, ax = plt.subplots()
-        ax.set_aspect('equal', 'box')
-
-        # Robot
-        ax.plot(px, py, 'ko', markersize=5, label='robot')
-
-        # Sensing circle
-        sensing_circle = plt.Circle((px, py), sensing_R,
-                                    fill=False, linestyle='--', color='gray')
-        ax.add_patch(sensing_circle)
-
-        # Obstacle
-        obs_circle = plt.Circle((ox, oy), R_obs,
-                                fill=False, color='k')
-        ax.add_patch(obs_circle)
-
-        # True occlusion (LOS-based)
-        tc = ax.contourf(
-            XX, YY, true_occ,
-            levels=[0.5, 1.5],
-            alpha=0.25,
-            colors=['#ffcccc']
-        )
-        tc.collections[0].set_label('true occlusion (LOS)')
-
-        try:
-            cs = ax.contour(
-                XX, YY, h_curved,
-                levels=[0.0],
-                colors='red',
-                linewidths=2.0
-            )
-            for cset in cs.collections:
-                cset.set_label('curved softmax h̃(x)=0')
-        except Exception:
-            print("[viz] Warning: could not draw curved softmax contour (maybe all NaN).")
-
-        # Polygon wedge
-        poly_closed = np.vstack([poly, poly[0]])
-        ax.plot(poly_closed[:, 0], poly_closed[:, 1],
-                'b--', linewidth=1.5, label='polygon wedge')
-
-        ax.set_xlim(xmin, xmax)
-        ax.set_ylim(ymin, ymax)
-        ax.set_title("True occlusion vs curved softmax approx vs polygon wedge")
-
-        handles, labels = ax.get_legend_handles_labels()
-        uniq = {}
-        for h, l in zip(handles, labels):
-            uniq[l] = h
-        ax.legend(uniq.values(), uniq.keys(), loc='upper right')
-
-        plt.show()
-
-        # restore kappa
-        self.kappa = old_kappa
-
-    def _u_pi_at(self, x, scenarios, t=0.0):
-        if hasattr(self.robot, "backup_input_at"):
-            return self.robot.backup_input_at(x, scenarios,t=t)
-
-        if (scenarios is not None) and hasattr(self.robot, "backup_input_occlusion"):
-            u = self.robot.backup_input_occlusion(x, scenarios, t=t)
-            if u is not None:
-                return u
-
-        if hasattr(self.robot, "backup_input"):
-            u = self.robot.backup_input(x)
-            if u is not None:
-                return u
-
-        if hasattr(self.robot, "stop"):
-            return self.robot.stop(x)
-        return np.zeros((2,1), dtype=float)
-
     
     def setup_control_problem(self):
         # QP variables and parameters
         self.u = cp.Variable((2, 1))
         self.u_ref = cp.Parameter((2, 1), value=np.zeros((2, 1)))
 
-        # max_constraints = 5 * int(self.T_horizon / self.dt_backup + 2)
-        
         N_tau = int(self.T_horizon / self.dt_backup) + 2
         max_constraints = int((2 * self.num_obs + 10) * N_tau)
         
@@ -567,39 +180,9 @@ class BackupCBFQP:
     def solve_control_problem(self, robot_state, control_ref, obs_list):
         self.u_ref.value = control_ref['u_ref']
         
-        # 0) Filter obstacles within sensing range
-        detected_obs = []
-        
-        if obs_list is not None:
-            obs_arr = np.array(obs_list, dtype=float)
-            if obs_arr.ndim == 1:
-                obs_arr = obs_arr.reshape(1, -1)
-
-            px, py = float(robot_state[0, 0]), float(robot_state[1, 0])
-            R_sense2 = self.sensing_range **2
-            p = np.array([px, py])
-            
-            for obs in obs_arr:
-                ox = float(obs[0])
-                oy = float(obs[1])
-                if (ox - px) ** 2 + (oy - py) ** 2 <= R_sense2:
-                    detected_obs.append(obs)
-
-        no_obs = (len(detected_obs) == 0)
-
-        # 1) Build occlusion scenarios from detected obstacles
-        # occlusion_scenarios = []
-        # if not no_obs:
-        #     for obs in detected_obs:
-        #         scenario = self._build_occlusion_scenario(robot_state, obs)
-        #         if scenario is not None:
-        #             occlusion_scenarios.append(scenario)
-        # self.occlusion_scenarios = occlusion_scenarios
-        # no_occ = (len(self.occlusion_scenarios) == 0)
-        
+        # 0) Build visible obstacles + occlusion scenarios (sensing range handled inside)
         visible_obs, occlusion_scenarios = self._filter_visible_and_build_occ(robot_state, obs_list)
         self.occlusion_scenarios = occlusion_scenarios
-
         no_obs = (len(visible_obs) == 0)
         no_occ = (len(self.occlusion_scenarios) == 0)
 
@@ -767,23 +350,16 @@ class BackupCBFQP:
             viol = float(np.max(A_cbf_val @ self.u_ref.value - b_cbf_val))
             print(f"[BackupCBFQP] num_constraints={num_constraints}, max_viol(u_ref)={viol:.3e}")
 
-        # 8) Solve QP (try GUROBI first, fall back to OSQP)
+        # 8) Solve QP (GUROBI only; status is handled by tracking.py)
         t_start_qp = time.perf_counter()
-        try:
-            self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
-        except cp.error.SolverError:
-            self.cbf_controller.solve(solver=cp.OSQP)
-            
+        self.cbf_controller.solve(solver=cp.GUROBI, reoptimize=True)
         t_end_qp = time.perf_counter()
-        
+
         qp_solve_time_ms = (t_end_qp - t_start_qp) * 1000
-        
+
         if self.debug:
             print(f"[BackupCBFQP] QP Solve Time: {qp_solve_time_ms:.3f} ms")
-            
-        self.status = self.cbf_controller.status
 
-        if self.status != 'optimal':
-            raise InfeasibleError("QP infeasible")
+        self.status = self.cbf_controller.status
 
         return self.u.value
