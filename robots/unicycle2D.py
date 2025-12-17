@@ -1,5 +1,6 @@
 import numpy as np
 import casadi as ca
+import cvxpy as cp
 
 """
 Created on July 14h, 2024
@@ -37,8 +38,12 @@ class Unicycle2D:
 
         self.robot_spec.setdefault('v_max', 1.0)
         self.robot_spec.setdefault('w_max', 0.5)
+        # controller config
+        self.u_dim = 2
+        self._occ_barrier_fn = None
 
     def f(self, X, casadi=False):
+        X3 = X[:3]
         if casadi:
             return ca.vertcat([
                 0, 
@@ -49,21 +54,25 @@ class Unicycle2D:
             return np.array([0,0,0]).reshape(-1,1)
     
     def g(self, X, casadi=False):
+        X3 = X[:3]
         if casadi:
             g = ca.SX.zeros(3, 2)
-            g[0, 0] = ca.cos(X[2,0])
-            g[1, 0] = ca.sin(X[2,0])
+            g[0, 0] = ca.cos(X3[2,0])
+            g[1, 0] = ca.sin(X3[2,0])
             g[2, 1] = 1
             return g
         else:
-            return np.array([ [ np.cos(X[2,0]), 0],
-                            [ np.sin(X[2,0]), 0],
+            return np.array([ [ np.cos(X3[2,0]), 0],
+                            [ np.sin(X3[2,0]), 0],
                             [0, 1] ]) 
          
     def step(self, X, U): 
-        X = X + ( self.f(X) + self.g(X) @ U )*self.dt
-        X[2,0] = angle_normalize(X[2,0])
-        return X
+        X_new = X.copy()
+        base = X[:3]
+        base = base + ( self.f(base) + self.g(base) @ U )*self.dt
+        base[2,0] = angle_normalize(base[2,0])
+        X_new[:3] = base
+        return X_new
 
     def nominal_input(self, X, G, d_min = 0.05, k_omega = 2.0, k_v = 1.0):
         '''
@@ -142,3 +151,98 @@ class Unicycle2D:
 
         d_h = h_k1 - h_k
         return h_k, d_h
+    
+    # === Backup CBF support ===
+    def input_constraints(self, u_var):
+        v_max = float(self.robot_spec.get('v_max', np.inf))
+        w_max = float(self.robot_spec.get('w_max', np.inf))
+        return [cp.abs(u_var[0]) <= v_max,
+                cp.abs(u_var[1]) <= w_max]
+
+    def set_occ_barrier_fn(self, fn):
+        self._occ_barrier_fn = fn
+
+    def backup_input(self, X):
+        return self.stop(X)
+
+    def backup_input_occlusion(self, X, occlusion_scenarios=None, t=None, k_d=1.0, k_occ=1.0):
+        # simple occlusion-aware backup:
+        # - steer away from occlusion normals (risk_normal_vec)
+        # - throttle proportional to heading alignment
+        if occlusion_scenarios is None or len(occlusion_scenarios) == 0:
+            return self.stop(X)
+
+        dir_vecs = []
+        for sc in occlusion_scenarios:
+            rv = sc.get('risk_normal_vec', None)
+            if rv is not None and rv.size >= 2:
+                dir_vecs.append(rv.reshape(-1, 2).mean(axis=0))
+        if not dir_vecs:
+            return self.stop(X)
+
+        dir_avg = np.mean(dir_vecs, axis=0)
+        if np.linalg.norm(dir_avg) < 1e-9:
+            return self.stop(X)
+
+        dir_unit = dir_avg / np.linalg.norm(dir_avg)
+        theta = float(X[2, 0])
+        heading = np.array([np.cos(theta), np.sin(theta)])
+
+        target_yaw = np.arctan2(dir_unit[1], dir_unit[0])
+        yaw_err = angle_normalize(target_yaw - theta)
+
+        v_max = float(self.robot_spec.get('v_max', 1.0))
+        w_max = float(self.robot_spec.get('w_max', 0.5))
+
+        # forward speed scales with alignment to safe direction
+        align = max(0.0, heading @ dir_unit)
+        v_cmd = min(v_max, k_occ * align * v_max)
+
+        w_cmd = np.clip(k_d * yaw_err, -w_max, w_max)
+
+        return np.array([v_cmd, w_cmd]).reshape(-1, 1)
+
+    def f_cl(self, X, occlusion_scenarios=None, t=None):
+        u_b = self.backup_input(X)
+        xdot = self.f(X) + self.g(X) @ u_b  # shape (3,1)
+        n = X.shape[0]
+        if n > 3:
+            pad = np.zeros((n - 3, 1))
+            xdot = np.vstack([xdot, pad])
+        return xdot
+
+    def F_cl(self, X, occlusion_scenarios=None, t=None):
+        n = X.shape[0]
+        F = np.zeros((n, n))
+        if hasattr(self, "df_dx"):
+            base = self.df_dx(X)
+            F[:base.shape[0], :base.shape[1]] = base
+        return F
+
+    def simulate_backup_trajectory(self, x0, T, dt, occlusion_scenarios=None):
+        from scipy.integrate import solve_ivp
+        x0_flat = x0.flatten()
+        n = x0_flat.size
+
+        def aug_dyn(t, y):
+            x = y[:n].reshape(n, 1)
+            Phi = y[n:].reshape((n, n))
+            x_dot = self.f_cl(x, occlusion_scenarios, t).flatten()
+            Phi_dot = self.F_cl(x, occlusion_scenarios, t) @ Phi
+            return np.concatenate([x_dot, Phi_dot.flatten()])
+
+        t_eval = np.arange(0.0, T + 1e-9, dt)
+        y0 = np.concatenate([x0_flat, np.eye(n).flatten()])
+        sol = solve_ivp(aug_dyn, [0, T], y0, t_eval=t_eval, dense_output=False)
+        traj = sol.y[:n, :].T
+        Phi_traj = sol.y[n:, :].T.reshape(-1, n, n)
+        return traj, Phi_traj, t_eval
+
+    def h_b_stop(self, X):
+        # always safe stop set for kinematic unicycle (no velocity state)
+        return 1.0
+
+    def grad_h_b_stop(self, X):
+        n = X.shape[0]
+        grad = np.zeros((1, n))
+        return grad

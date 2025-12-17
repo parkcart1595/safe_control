@@ -54,6 +54,16 @@ class DoubleIntegrator2D:
         }
         self.occ_margin = 0.1
 
+        # controller config
+        self.u_dim = 2
+
+    def input_constraints(self, u_var):
+        """Return CVXPY constraints for input bounds."""
+        import cvxpy as cp
+        a_max = float(self.robot_spec.get('a_max', np.inf))
+        return [cp.abs(u_var[0]) <= a_max,
+                cp.abs(u_var[1]) <= a_max]
+
     def f(self, X, casadi=False):
         if casadi:
             return ca.vertcat(
@@ -196,7 +206,7 @@ class DoubleIntegrator2D:
 
         return h_k, d_h, dd_h
     
-    #### Backup CBF ####
+    # ---- Backup CBF ----
     def set_occ_barrier_fn(self, fn):
         self._occ_barrier_fn = fn
 
@@ -237,23 +247,20 @@ class DoubleIntegrator2D:
             d = np.hypot(dx_o, dy_o)
             R_tot = R + R_o + R_occ
             h3 = d - R_tot
-            # h3 = np.sqrt(dx_o*dx_o + dy_o*dy_o - (R_occ + R + R_o)**2)
             p_rel = np.array([x - c[0],
                               y - c[1]])
             p_rel_mag = np.linalg.norm(p_rel)
             arc_adv = vadv * p_rel / p_rel_mag
             arc_adv = arc_adv.flatten()
 
-            # print(f"arc_adv: {arc_adv}")
             if h3 > 0.0:
                 A_stack.append(arc_adv)
-            # # print(f"tan_risk: {tan_risk}")
 
             T_occ = vadv * t
-            # h1,h2: wedge 바깥(안전)일수록 양수
+            # h1/h2 are positive when outside the wedge (safe side)
             h1 = float(a1 @ p - beta1 - R - T_occ)
             h2 = float(a2 @ p - beta2 - R - T_occ)
-            # print(f"h1: {h1} | h2: {h2}")
+
             if h1 > 0.0:
                 norm_a1 = np.linalg.norm(a1)
                 vec_a1 = (a1 / norm_a1) * vadv
@@ -262,7 +269,7 @@ class DoubleIntegrator2D:
                 norm_a2 = np.linalg.norm(a2)
                 vec_a2 = (a2 / norm_a2) * vadv
                 A_stack.append(vec_a2)
-            # print(f"A_stack: {A_stack}")
+
             if len(A_stack) == 0:
                 return np.zeros(2, dtype=float)
             
@@ -359,20 +366,6 @@ class DoubleIntegrator2D:
         F = np.block([[np.zeros((2,2)), np.eye(2)],
                     [lower_left,      Bv      ]])
         return F
-
-    # def F_cl(self, X):
-    #     """
-    #     Jacobian matrix of f_cl(X)
-    #     Use for STM calculation
-    #     As u_b = k_a * (-v), df_cl/dv = -k_a
-    #     """
-    #     k_a = 1.0
-    #     return np.array([
-    #         [0, 0, 1, 0],
-    #         [0, 0, 0, 1],
-    #         [0, 0, -k_a, 0],
-    #         [0, 0, 0, -k_a]
-    #     ])
         
     def set_terminal_backup_context(self, occlusion_scenario, T, kappa=None, rho_T=0.1):
         self._term_occ_scenario = occlusion_scenario
@@ -402,7 +395,7 @@ class DoubleIntegrator2D:
         if gp is not None:
             # print("loop in grad_h_b_stop")
             if gp.shape == (1,2):
-                # 확장: [grad_pos, 0, 0]
+                # Expand to state dimension: [grad_pos, 0, 0]
                 return np.hstack([gp, np.array([[0.0, 0.0]])])
             return gp
     

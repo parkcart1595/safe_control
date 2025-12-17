@@ -677,7 +677,10 @@ class BaseRobot:
         """
         # underlying robot
         if hasattr(self.robot, "backup_input_occlusion"):
-            return self.robot.backup_input_occlusion(X, occlusion_scenarios, t=t, k_d=k_d, k_occ=k_occ)
+            try:
+                return self.robot.backup_input_occlusion(X, occlusion_scenarios, t=t, k_d=k_d, k_occ=k_occ)
+            except TypeError:
+                return self.robot.backup_input_occlusion(X, occlusion_scenarios, t=t)
 
         # If only backup_input
         if hasattr(self.robot, "backup_input"):

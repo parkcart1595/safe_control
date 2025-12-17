@@ -1,5 +1,6 @@
 import numpy as np
 import casadi as ca
+import cvxpy as cp
 
 import matplotlib.pyplot as plt
 from matplotlib.transforms import Affine2D
@@ -49,6 +50,9 @@ class KinematicBicycle2D:
         self.robot_spec.setdefault('delta_max', np.deg2rad(32))
         self.robot_spec.setdefault('beta_max', self.beta(self.robot_spec['delta_max']))
         self.robot_spec.setdefault('v_min', 0.2)
+        # controller config
+        self.u_dim = 2
+        self._occ_barrier_fn = None
 
     def beta(self, delta):
         # Computes the slip angle beta
@@ -196,12 +200,64 @@ class KinematicBicycle2D:
 
         return h_k, d_h, dd_h
     
+    # === Backup CBF hooks ===
+    def input_constraints(self, u_var):
+        a_max = float(self.robot_spec.get('a_max', np.inf))
+        beta_max = float(self.robot_spec.get('beta_max', np.inf))
+        return [cp.abs(u_var[0]) <= a_max,
+                cp.abs(u_var[1]) <= beta_max]
+
+    def set_occ_barrier_fn(self, fn):
+        self._occ_barrier_fn = fn
+
+    def backup_input(self, X):
+        # Brake-to-stop policy.
+        return self.stop(X)
+
+    def backup_input_occlusion(self, X, occlusion_scenarios=None, t=None):
+        return self.stop(X)
+
+    def f_cl(self, X, occlusion_scenarios=None, t=None):
+        u_b = self.backup_input(X)
+        return self.f(X) + self.g(X) @ u_b
+
+    def F_cl(self, X, occlusion_scenarios=None, t=None):
+        # Approximate linearization around the backup policy.
+        return self.df_dx(X)
+
+    def simulate_backup_trajectory(self, x0, T, dt, occlusion_scenarios=None):
+        from scipy.integrate import solve_ivp
+        n = 4
+        x0 = x0.flatten()
+
+        def aug_dynamics(t, y):
+            x = y[:n].reshape(n, 1)
+            Phi = y[n:].reshape((n, n))
+            x_dot = self.f_cl(x, occlusion_scenarios, t).flatten()
+            Phi_dot = self.F_cl(x, occlusion_scenarios, t) @ Phi
+            return np.concatenate([x_dot, Phi_dot.flatten()])
+
+        t_eval = np.arange(0.0, T + 1e-9, dt)
+        y0 = np.concatenate([x0, np.eye(n).flatten()])
+        sol = solve_ivp(aug_dynamics, [0, T], y0, t_eval=t_eval, dense_output=False)
+        traj = sol.y[:n, :].T
+        Phi_traj = sol.y[n:, :].T.reshape(-1, n, n)
+        return traj, Phi_traj, t_eval
+
+    def h_b_stop(self, X):
+        # Stop set: small speed ball.
+        v = float(X[3, 0])
+        v_safe = 0.1
+        return v_safe**2 - v**2
+
+    def grad_h_b_stop(self, X):
+        # Gradient wrt [x, y, theta, v].
+        return np.array([[0.0, 0.0, 0.0, -2.0 * X[3, 0]]])
+    
     def render_rigid_body(self, X, U):
-        '''
-        Return the materials to render the rigid body
-        '''
+        '''Return transforms for rigid-body rendering.'''
         x, y, theta, v = X.flatten()
-        beta = U[1, 0]  # Steering angle control input
+        beta = U[1, 0]  # Slip angle control input
         delta = self.beta_to_delta(beta)
 
         # Update vehicle body

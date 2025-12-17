@@ -54,56 +54,13 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         from dynamic_env.robot import BaseRobotDyn
         self.robot = BaseRobotDyn(
             X0.reshape(-1, 1), self.robot_spec, self.dt, self.ax)
-        
-    # Update dynamic obs position
-    # def step_dyn_obs(self):
-    #     """if self.obs (n,5) array (ex) [x, y, r, vx, vy], update obs position per time step"""
-    #     if len(self.obs) != 0 and self.obs.shape[1] >= 7:
-    #         for i in enumerate(self.obs):
-    #             x, y, r, vx, vy, y_min, y_max = self.obs[i, :7]
-    #             mode = int(self.obs[i, 7]) if self.obs.shape[1] >= 8 else 0
-    #             v_max = float(self.obs[i, 8]) if self.obs.shape[1] >= 9 else np.hypot(vx, vy)
-    #             theta = float(self.obs[i, 9]) if self.obs.shape[1] >= 10 else float(np.arctan2(vy, vx))
-
-    #             if mode == 1:
-    #                 # ---- 랜덤워커: 방향만 부드럽게 요동 ----
-    #                 # 작은 방향 노이즈 + 가끔 큰 턴
-    #                 dtheta = self._rng.normal(0.0, 0.15)
-    #                 if self._rng.random() < 0.05:   # 5% 확률로 큰 방향 전환
-    #                     dtheta += self._rng.normal(0.0, 0.7)
-
-    #                 theta += dtheta
-
-    #                 # 속도는 v_max로 유지 (원하면 아래 한 줄을 바꿔 변동 속도도 가능)
-    #                 speed = v_max
-    #                 vx, vy = speed * np.cos(theta), speed * np.sin(theta)
-
-    #                 # 값 되돌려쓰기
-    #                 self.obs[i, 3] = vx
-    #                 self.obs[i, 4] = vy
-    #                 if self.obs.shape[1] >= 10:
-    #                     self.obs[i, 9] = theta
-                        
-    #             # obs_info = [x, y, r, vx, vy, y_min, y_max]
-    #             self.obs[i, 0] += self.obs[i, 3] * self.dt  # x += vx*dt (if vx != 0)
-    #             self.obs[i, 1] += self.obs[i, 4] * self.dt  # y += vy*dt
-
-    #             # Flip velocity if it hits top or bottom
-    #             y_min = self.obs[i, 5]
-    #             y_max = self.obs[i, 6]
-    #             if self.obs[i, 1] >= y_max:
-    #                 self.obs[i, 1] = y_max
-    #                 self.obs[i, 4] = -abs(self.obs[i, 4])  # flip to negative
-    #             elif self.obs[i, 1] <= y_min:
-    #                 self.obs[i, 1] = y_min
-    #                 self.obs[i, 4] = abs(self.obs[i, 4])   # flip to positive
     
     def set_obs_meta(self, meta_list):
         """
-        meta_list: 길이 N인 리스트.
-        각 원소는 dict 예) {'mode':0/1, 'v_max':0.35, 'theta':초기각(라드)}
-        - mode=0: 등속 (기존과 동일)
-        - mode=1: 랜덤워커(방향 랜덤 요동)
+        meta_list: list of length N.
+        Each element is a dict, e.g. {'mode':0/1, 'v_max':0.35, 'theta':initial heading (rad)}
+        - mode=0: constant velocity (default behavior)
+        - mode=1: random walker (heading jitter)
         """
         if not isinstance(meta_list, list):
             raise ValueError("meta_list must be a list")
@@ -112,7 +69,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         self.obs_meta = meta_list
         
     def _ensure_obs_meta(self):
-        """메타가 없으면 등속 기본값으로 자동 구성."""
+        """Populate constant-velocity defaults when metadata is missing."""
         if self.obs_meta and len(self.obs_meta) == len(self.obs):
             return
         self.obs_meta = []
@@ -161,7 +118,6 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         if not (isinstance(self.obs, np.ndarray) and self.obs.ndim == 2 and self.obs.shape[1] == 7):
             self.obs = np.array(self.obs, dtype=float).reshape(-1, 7)
 
-        # 메타 없으면 기본값 생성
         self._ensure_obs_meta()
 
         for i in range(self.obs.shape[0]):
@@ -172,24 +128,24 @@ class LocalTrackingControllerDyn(LocalTrackingController):
             theta  = float(meta.get('theta', np.arctan2(vy, vx) if v_max>1e-9 else 0.0))
 
             if mode == 1:
-                # --- 랜덤워커: 방향에 소음 + 간헐적 큰 턴 ---
-                dtheta = self._rng.normal(0.0, 0.0)          # 작은 방향 요동
-                if self._rng.random() < 0.05:                 # 5% 확률 큰 턴
+                # --- Random walker: heading noise + occasional large turn ---
+                dtheta = self._rng.normal(0.0, 0.0)          # small heading jitter
+                if self._rng.random() < 0.05:                 # 5% chance of a large turn
                     dtheta += self._rng.normal(0.0, 0.2)
                 theta += dtheta
                 vx, vy = v_max * np.cos(theta), v_max * np.sin(theta)
-                meta['theta'] = theta   # 메타에 최신 각도 저장
+                meta['theta'] = theta   # store latest heading in meta
 
-            # 위치 업데이트
+            # Update position
             x_new = x + vx * self.dt
             y_new = y + vy * self.dt
 
-            # y 경계 반사 처리
+            # Reflect at y bounds
             if y_new >= y_max:
                 y_new = y_max
                 vy = -abs(vy)
                 if mode == 1:
-                    meta['theta'] = -meta['theta']            # x축 대칭 반사
+                    meta['theta'] = -meta['theta']            # mirror across x-axis
                     vx, vy = v_max*np.cos(meta['theta']), v_max*np.sin(meta['theta'])
             elif y_new <= y_min:
                 y_new = y_min
@@ -198,7 +154,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
                     meta['theta'] = -meta['theta']
                     vx, vy = v_max*np.cos(meta['theta']), v_max*np.sin(meta['theta'])
 
-            # 쓰기
+            # Write back
             self.obs[i, 0] = x_new
             self.obs[i, 1] = y_new
             self.obs[i, 3] = vx
@@ -561,12 +517,23 @@ def single_agent_main(controller_type):
             'sensor': 'rgbd',
             'radius': 0.25
         }
+    elif model == 'Unicycle2D':
+        robot_spec = {
+            'model': 'Unicycle2D',
+            'v_max': 1.0,
+            'w_max': 0.5,
+            'radius': 0.25,
+            'sensor': 'rgbd',
+            'sensing_range': 10.0
+        }
     elif model == 'KinematicBicycle2D':
         robot_spec = {
             'model': 'KinematicBicycle2D',
             'a_max': 0.5,
             'sensor': 'rgbd',
-            'radius': 0.5
+            'radius': 0.5,
+            'debug_backup_qp': True,
+            'sensing_range': 10.0
         }
     elif model == 'KinematicBicycle2D_C3BF':
         robot_spec = {
@@ -605,7 +572,8 @@ def single_agent_main(controller_type):
         x_init = np.append(waypoints[0], 1.0)
     
     if known_obs.shape[1] != 7:
-        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2)))) # Set static obs velocity 0.0 at (5, 5)
+        # Append zero velocity columns when obstacle velocity is missing.
+        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2))))
     
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here

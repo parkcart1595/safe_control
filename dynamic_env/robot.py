@@ -29,17 +29,17 @@ class BaseRobotDyn(BaseRobot):
 
     def draw_collision_cone(self, X, obs_list, ax):
         '''
-        Render the collision cone based on phi
-        obs: [obs_x, obs_y, obs_r]
+        Render collision cones for nearby obstacles
+        obs: [obs_x, obs_y, obs_r, obs_vx, obs_vy, ...]
         '''
         if self.robot_spec['model'] != 'KinematicBicycle2D_C3BF':
             return
         
-        # Remove previous collision cones safely
+        # Remove previous collision cone patches
         if not hasattr(self, 'collision_cone_patches'):
             self.collision_cone_patches = [] # Initialize attribute
         
-        # Remove previous relative vel safely
+        # Remove previous relative velocity arrows
         if not hasattr(self, 'rel_vel_patches'):
             self.rel_vel_patches = []
 
@@ -52,7 +52,6 @@ class BaseRobotDyn(BaseRobot):
             arrow.remove()
         self.rel_vel_patches.clear()
 
-        # Robot and obstacle positions
         robot_pos = self.get_position()
         theta = X[2, 0]
         v = X[3, 0]
@@ -81,8 +80,8 @@ class BaseRobotDyn(BaseRobot):
             obs_vel_y = obs[4]
             beta = 1.05
 
-            # Combine radius R
-            ego_dim = obs_radius + self.robot_spec['radius'] * beta # max(c1,c2) + robot_width/2
+            # Combined radius with a safety margin
+            ego_dim = obs_radius + self.robot_spec['radius'] * beta
 
             v = X[3, 0]
             p_rel = np.array([[obs[0] - X[0, 0]], 
@@ -92,7 +91,7 @@ class BaseRobotDyn(BaseRobot):
 
             p_rel_mag = np.linalg.norm(p_rel)
 
-            # Calculate Collision cone angle
+            # Collision cone half-angle
             phi = np.arcsin(ego_dim / p_rel_mag)
 
             cone_dir = -p_rel / p_rel_mag
@@ -103,7 +102,7 @@ class BaseRobotDyn(BaseRobot):
             cone_left = (rot_matrix_left @ cone_dir).flatten()
             cone_right = (rot_matrix_right @ cone_dir).flatten()
 
-            # Extend cone boundaries
+            # Extend cone boundaries for visualization
             cone_left = (robot_pos + 4 * cone_left).tolist()
             cone_right = (robot_pos + 4 * cone_right).tolist()
 
@@ -130,17 +129,17 @@ class BaseRobotDyn(BaseRobot):
 
     def draw_collision_parabola(self, X, obs_list, ax):
         '''
-        Render the collision parabola based on functions
-        obs: [obs_x, obs_y, obs_r]
+        Render collision parabolas for nearby obstacles
+        obs: [obs_x, obs_y, obs_r, obs_vx, obs_vy, ...]
         '''
         if self.robot_spec['model'] not in ['KinematicBicycle2D_DPCBF']:
             return
 
-        # Remove previous collision parabolas safely
+        # Remove previous collision parabola plots
         if not hasattr(self, 'collision_parabola_patches'):
             self.collision_parabola_patches = [] # Initialize attribute
 
-        # Remove previous relative vel safely
+        # Remove previous relative velocity arrows
         if not hasattr(self, 'rel_vel_patches'):
             self.rel_vel_patches = []
 
@@ -152,7 +151,6 @@ class BaseRobotDyn(BaseRobot):
                 arrow.remove()
         self.rel_vel_patches.clear()
 
-        # Robot and obstacle positions
         robot_pos = self.get_position()
 
         obstacles_with_dist = []
@@ -182,10 +180,10 @@ class BaseRobotDyn(BaseRobot):
             obs_vel_x = obs[3]
             obs_vel_y = obs[4]
 
-            # safety margin
+            # Safety margin
             beta = 1.05
-            # Combine radius R
-            ego_dim = (obs_radius + self.robot_spec['radius']) * beta # max(c1,c2) + robot_width/2 (we suppose safe r as radius)
+            # Combined radius with a safety margin
+            ego_dim = (obs_radius + self.robot_spec['radius']) * beta
 
             p_rel = obs_pos - robot_pos
             v_rel = np.array([[obs_vel_x - v * np.cos(theta)], 
@@ -238,7 +236,7 @@ class BaseRobotDyn(BaseRobot):
         v = p - c
         d2 = float(v @ v)
         R2 = R * R
-        if d2 <= R2:   # 로봇이 확장원 안/위면 접선 없음
+        if d2 <= R2:   # No tangents if the robot is inside/on the expanded circle.
             return None, None
         x1, y1 = v
         x0 = R2 * x1 / d2
@@ -343,29 +341,28 @@ class BaseRobotDyn(BaseRobot):
     
     def _line_circle_intersections(self, n, beta, p, R):
         """
-        n: (2,) 단위 법선벡터
-        선: n·x = beta
-        원: 중심 p, 반지름 R
-        return: 교점 2개 (x_plus, x_minus) 또는 None
+        n: (2,) unit normal vector
+        line: n·x = beta
+        circle: center p, radius R
+        returns: two intersections (x_plus, x_minus) or None
         """
         import numpy as np
         n = np.asarray(n, float).reshape(2,)
         p = np.asarray(p, float).reshape(2,)
-        d = float(beta - n @ p)               # 원 중심에서 선까지 부호거리
+        d = float(beta - n @ p)               # Signed distance from circle center to the line.
         if abs(d) > R + 1e-9:
             return None
-        # 선 위의 중심에 가장 가까운 점
+        # Closest point on the line to the circle center
         x0 = p + d * n
-        # 선의 방향단위벡터 (법선에 수직)
+        # Unit tangent direction of the line
         t = np.array([-n[1], n[0]], dtype=float)
         l = float(np.sqrt(max(R*R - d*d, 0.0)))
         return x0 + l * t, x0 - l * t
 
     def _build_occlusion_UT_offset(self, p, c, R_o, R_s, t1, t2, d, n_arc=60):
         """
-        U0의 두 접선( p->t1, p->t2 )을 각 선의 '장애물쪽' 법선으로 거리 d 만큼
-        평행이동하여 U_T 경계를 구성.
-        내부 원호는 R_o+d, 외부 원호는 R_s 유지.
+        Offset the two tangents of U0 by distance d toward the obstacle to build U_T
+        The inner arc uses radius R_o + d, the outer arc stays at R_s.
         """
         import numpy as np, math
 
@@ -377,52 +374,51 @@ class BaseRobotDyn(BaseRobot):
             a1 = normang(a1); a2 = normang(a2); amid = normang(amid)
             ccw = normang(a2 - a1);  ccw = ccw + 2*math.pi if ccw <= 0 else ccw
             dmid = normang(amid - a1)
-            # amid(=장애물 방향)을 포함하는 호를 선택
+            # Choose the arc that includes the obstacle direction
             if 0.0 <= dmid <= ccw:
                 return np.linspace(a1, a1 + ccw, n)
             else:
                 cw = 2*math.pi - ccw
                 return np.linspace(a1, a1 - cw, n)
 
-        # (1) U0 접선의 법선 = (t_i - c)/||t_i - c||  (접점의 반지름 방향 = 접선의 법선)
+        # (1) Tangent normals at contact points
         n1 = t1 - c; n1 = n1 / (np.linalg.norm(n1) + 1e-12)
         n2 = t2 - c; n2 = n2 / (np.linalg.norm(n2) + 1e-12)
 
-        # U0 접선식: n_i · x = beta0_i,  beta0_i = n_i · t_i
+        # U0 tangents: n_i · x = beta0_i, beta0_i = n_i · t_i
         beta01 = float(n1 @ t1)
         beta02 = float(n2 @ t2)
 
-        # (2) 법선방향으로 d 만큼 평행이동 → beta' = beta0 + d
+        # (2) Offset by d along the normal: beta' = beta0 + d
         beta1 = beta01 + d
         beta2 = beta02 + d
         R_eff = R_o + d
 
-        # (3) 내부(확장) 원과의 접점: q_i' = c + R_eff * n_i
+        # (3) Tangency points on the expanded inner circle: q_i' = c + R_eff * n_i
         q1 = c + R_eff * n1
         q2 = c + R_eff * n2
 
-        # (4) 외부 원과의 교점: n_i·x = beta_i 와 O(p, R_s) 교점 중,
-        #     p→t_i 방향에 더 가까운 것을 선택
+        # (4) Intersections with the outer circle: pick the one aligned with p→t_i
         u1 = (t1 - p); u1 = u1 / (np.linalg.norm(u1) + 1e-12)
         u2 = (t2 - p); u2 = u2 / (np.linalg.norm(u2) + 1e-12)
 
         ints1 = self._line_circle_intersections(n1, beta1, p, R_s)
         ints2 = self._line_circle_intersections(n2, beta2, p, R_s)
         if (ints1 is None) or (ints2 is None):
-            return None  # 센싱반경 밖이면 그리지 않음
+            return None  # Skip if out of sensing range
 
         cand11, cand12 = ints1
         cand21, cand22 = ints2
-        # 방향 선택: p에서 교점으로의 단위벡터가 u_i와 내적 최대인 점
+        # Pick the intersection most aligned with u_i
         def pick_dir(c1, c2, u):
             v1 = c1 - p; v1 = v1 / (np.linalg.norm(v1) + 1e-12)
             v2 = c2 - p; v2 = v2 / (np.linalg.norm(v2) + 1e-12)
             return c1 if (v1 @ u) >= (v2 @ u) else c2
 
-        f1 = pick_dir(cand11, cand12, u1)  # 외부 원의 끝점 (L1')
-        f2 = pick_dir(cand21, cand22, u2)  # 외부 원의 끝점 (L2')
+        f1 = pick_dir(cand11, cand12, u1)  # Outer arc endpoint (L1')
+        f2 = pick_dir(cand21, cand22, u2)  # Outer arc endpoint (L2')
 
-        # (5) 외부 원호 (f1→f2), 장애물 방향을 포함하는 쪽으로
+        # (5) Outer arc (f1→f2), choose the side containing the obstacle
         phi1 = math.atan2(f1[1]-p[1], f1[0]-p[0])
         phi2 = math.atan2(f2[1]-p[1], f2[0]-p[0])
         phi_c = math.atan2(c[1]-p[1],  c[0]-p[0])
@@ -430,19 +426,19 @@ class BaseRobotDyn(BaseRobot):
         outer_arc = np.vstack([p[0] + R_s*np.cos(outer_phis),
                             p[1] + R_s*np.sin(outer_phis)]).T
 
-        # (6) 내부(확장) 원호: 로봇 방향 포함하지 않는 보완호 (q2→q1)
+        # (6) Inner expanded arc: complementary arc excluding robot direction (q2→q1)
         th1 = math.atan2(q1[1]-c[1], q1[0]-c[0])
         th2 = math.atan2(q2[1]-c[1], q2[0]-c[0])
         thp = math.atan2(p[1]-c[1],  p[0]-c[0])
-        inc = arc_with_mid(th1, th2, thp, n_arc)   # 로봇방향 포함하는 호
-        exc = inc[::-1]                             # 보완호 (로봇방향 제외)
+        inc = arc_with_mid(th1, th2, thp, n_arc)    # Arc including robot direction
+        exc = inc[::-1]                             # Complementary arc (exclude robot direction)
         inner_arc = np.vstack([c[0] + R_eff*np.cos(exc),
                             c[1] + R_eff*np.sin(exc)]).T
-        # inner_arc 시작을 q2에 맞춰 방향 q2→q1로 정렬
+        # Ensure inner_arc starts near q2 (direction q2→q1)
         if np.linalg.norm(inner_arc[0]-q2) > np.linalg.norm(inner_arc[-1]-q2):
             inner_arc = inner_arc[::-1]
 
-        # (7) 최종 다각형: outer_arc(f1→f2) → q2 → inner_arc(q2→q1) → q1
+        # (7) Final polygon: outer_arc(f1→f2) → q2 → inner_arc(q2→q1) → q1
         poly = []
         poly.extend(outer_arc.tolist())
         poly.append(q2.tolist())
@@ -452,8 +448,8 @@ class BaseRobotDyn(BaseRobot):
     
     def _ut_halfspaces_params(self, p, c, R_o, t1, t2, d):
         """
-        U0의 접점(t1,t2)을 기준으로, τ=T에서 평행이동된 두 접선의
-        (법선 n_i, 오프셋 beta_i)와 확장반경 R_eff를 반환.
+        Half-space parameters (n_i, beta_i) for tangents at τ=T,
+        and the expanded radius R_eff.
         """
         import numpy as np
         p = np.asarray(p, float); c = np.asarray(c, float)
@@ -492,31 +488,31 @@ class BaseRobotDyn(BaseRobot):
                                 n1, beta1, n2, beta2, R_eff,
                                 kappa, wedge_eps=1e-3, band_eps=None):
         """
-        h̃_T를 계산하되, UT 경계 근처(밴드) ∩ 웨지 안(c1,c2) ∩
-        센싱원 안(c3) ∩ 확장장애물 밖(c4) 만 남기고 나머지는 NaN으로 마스킹.
+        Compute h̃_T and mask everything except:
+        near-boundary band ∩ inside wedge ∩ inside sensing disk ∩ outside expanded obstacle.
         """
         R = float(self.robot_radius)
 
-        # 각 제약의 'inside' SDF (>=0가 내부)
+        # Signed distances for each constraint (>=0 is inside)
         c1 = (beta1 + R) - (XX * n1[0] + YY * n1[1])              # halfspace 1 (inside when >=0)
         c2 = (beta2 + R) - (XX * n2[0] + YY * n2[1])              # halfspace 2
         c3 = (R_s + R) - np.hypot(XX - p[0], YY - p[1])           # inside sensing disc
         c4 = np.hypot(XX - c[0], YY - c[1]) - (R_eff + R)         # outside expanded obstacle
 
-        # softmin (교집합용) – 기존과 동일
+        # Softmin for intersection (same as main field)
         C = np.stack([c1, c2, c3, c4], axis=2)                    # (..., 4)
         Cmin = np.min(C, axis=2, keepdims=True)
         h_tilde = ( Cmin.squeeze(-1)
                     - ( np.log(np.exp(-kappa*(C - Cmin)).sum(axis=2)) - np.log(4.0) ) / float(kappa) )
 
-        # ----- 마스크 -----
-        # 웨지 내부(두 반평면 만족). 약간의 여유를 둠.
+        # ----- Masking -----
+        # Inside wedge (two halfspaces) with a small margin
         mask_wedge = (c1 >= -wedge_eps) & (c2 >= -wedge_eps)
-        # 원 조건도 너무 빡세지 않게 작은 여유
+        # Circle constraints with a small margin.
         ring_eps = 3.0 * max(1e-3, float((XX[0,1]-XX[0,0])))      # ≈ 3 * grid_res
         mask_rings = (c3 >= -ring_eps) & (c4 >= -ring_eps)
 
-        # 경계 근처만 띠로 남김(softmin=0 부근)
+        # Keep only a band near the boundary (softmin ~ 0)
         if band_eps is None:
             band_eps = 2.5 * max(1e-3, float((XX[0,1]-XX[0,0])))  # ≈ 2.5 * grid_res
         mask_band = np.abs(h_tilde) <= band_eps
@@ -563,11 +559,11 @@ class BaseRobotDyn(BaseRobot):
         # h4 = dx_o*dx_o + dy_o*dy_o - (R_o + R)**2
         dx_s, dy_s = x - p[0], y - p[1]
         d_s = np.hypot(dx_s, dy_s)
-        h3 = d_s - (R_s + R)           # 센싱 원호
+        h3 = d_s - (R_s + R)           # sensing arc
 
         dx_o, dy_o = x - c[0], y - c[1]
         d_o = np.hypot(dx_o, dy_o)
-        h4 = d_o - (R_o + R)           # 장애물 원호
+        h4 = d_o - (R_o + R)           # obstacle arc
         
         h_vec = np.array([h1, h2, h3, h4], dtype=float)
         if not np.all(np.isfinite(h_vec)):
@@ -589,7 +585,7 @@ class BaseRobotDyn(BaseRobot):
     def _clear_artists(self, lst):
         for a in lst:
             try:
-                # contour/contourf 인 경우
+                # For contour/contourf artists
                 if hasattr(a, "collections"):
                     for c in a.collections:
                         try: c.remove()
@@ -658,7 +654,7 @@ class BaseRobotDyn(BaseRobot):
                 d = float(v_adv * T_rollout)
                 built = self._build_occlusion_UT_offset(p, c, R_o, R_s, t1, t2, d, n_arc=80)
 
-            # ---- 3) U_T (future occlusion) : U0 접선의 법선방향 offset 구현 ----
+            # 3) Future occlusion U_T via tangent offsets
             if show_true_occ_T and built is not None:
                 UT, aux = built
                 patchT = patches.Polygon(
@@ -699,44 +695,6 @@ class BaseRobotDyn(BaseRobot):
                 for coll in csT.collections:
                     self.occlusion_softmax_contours.append(coll)
                     
-        # built = self._build_occlusion_UT_offset(p, c, R_o, R_s, t1, t2, d, n_arc=80)
-        # if built is not None:
-        #     UT, aux = built
-        #     patchT = patches.Polygon(
-        #         UT, closed=True, fill=True,
-        #         facecolor="#ffcfd9", edgecolor='none',
-        #         linewidth=0.0, alpha=0.22, zorder=0.9
-        #     )
-        #     patchT.set_antialiased(False)
-        #     self.ax.add_patch(patchT)
-        #     self.occlusion_future_contours.append(patchT)
-
-        #     # (b) τ=T soft-max 경계 (h̃_T(x)=0) 그리기
-        #     #    - UT 범위를 기준으로 그리드 구성
-        #     (n1b, beta1), (n2b, beta2), R_eff = self._ut_halfspaces_params(p, c, R_o, t1, t2, d)
-        #     xmin, xmax = UT[:, 0].min(), UT[:, 0].max()
-        #     ymin, ymax = UT[:, 1].min(), UT[:, 1].max()
-        #     pad = 0.75
-        #     xs = np.arange(xmin - pad, xmax + pad, grid_res)
-        #     ys = np.arange(ymin - pad, ymax + pad, grid_res)
-        #     XX, YY = np.meshgrid(xs, ys)
-
-        #     htilde_T = self._softmin_field_UT(
-        #         XX, YY, p, c, R_s,
-        #         n1b, beta1, n2b, beta2, R_eff,
-        #         kappa=float(kappa)
-        #     )
-
-        #     csT = self.ax.contour(
-        #         XX, YY, htilde_T,
-        #         levels=[0.0],
-        #         colors="#f80101ea",
-        #         linestyles='-',
-        #         linewidths=1.5,
-        #         zorder=5
-        #     )
-        #     for coll in csT.collections:
-        #         self.occlusion_softmax_contours.append(coll)
 
     def set_occ_barrier_fn(self, fn):
         """
@@ -752,12 +710,12 @@ class BaseRobotDyn(BaseRobot):
         
     def _draw_softmax_levelset(self, scenario, tau, bbox, grid_res, color, lw=1.8, ls='-'):
         """
-        scenario: backup_cbf_qp가 쓰는 그 dict (A, b0, robot_pos, obs_center, obs_radius, v_adv_max ...)
-        tau     : 0.0 또는 T
-        bbox    : (xmin,xmax,ymin,ymax)
+        scenario: dict used by BackupCBFQP (A, b0, robot_pos, obs_center, obs_radius, v_adv_max, ...)
+        tau     : 0.0 or T
+        bbox    : (xmin, xmax, ymin, ymax)
         """
         if self._occ_barrier_cb is None:
-            return  # 콜백 없으면 스킵
+            return  # No callback registered
 
         xmin, xmax, ymin, ymax = bbox
         xs = np.arange(xmin, xmax, grid_res)
@@ -780,15 +738,14 @@ class BaseRobotDyn(BaseRobot):
 
     def set_terminal_backup_context(self, occlusion_scenarios, T, kappa=None, rho_T=0.05):
         """
-        BackupCBFQP가 터미널 백업 컨텍스트를 주입할 때
-        내부 실제 로봇(예: DoubleIntegrator2D)으로 전달.
-        내부 모델에 해당 메서드가 없으면 안전한 no-op 컨텍스트를 저장해 둠.
+        Forward terminal backup context to the underlying model
+        If the model does not implement it, store a safe no-op context
         """
         inner = getattr(self, "robot", None)
         if inner is not None and hasattr(inner, "set_terminal_backup_context"):
             return inner.set_terminal_backup_context(occlusion_scenarios, T, kappa=kappa, rho_T=rho_T)
 
-        # fallback no-op (velocity 기반 백업으로 자동 폴백되도록 상태만 저장)
+        # Fallback no-op (store state for velocity-based backup)
         self._term_occ_scenarios = occlusion_scenarios if occlusion_scenarios else []
         self._term_T = float(T)
         self._term_kappa = kappa
@@ -797,22 +754,22 @@ class BaseRobotDyn(BaseRobot):
 
     def h_b_stop(self, X):
         """
-        터미널 백업 집합 값 h_b(x_T).
-        내부 모델이 구현했으면 그대로 위임, 없으면 속도 기반 폴백을 사용.
+        Terminal backup set value h_b(x_T)
+        Delegate to the model if available; otherwise use a speed-based fallback
         """
         inner = getattr(self, "robot", None)
         if inner is not None and hasattr(inner, "h_b_stop"):
             return inner.h_b_stop(X)
 
-        # fallback: v_safe^2 - ||v||^2
+        # Fallback: v_safe^2 - ||v||^2
         v_sq = float(X[2, 0]**2 + X[3, 0]**2)
         v_safe_sq = (0.3)**2
         return v_safe_sq - v_sq
 
     def grad_h_b_stop(self, X):
         """
-        h_b_stop의 그래디언트.
-        내부 모델이 구현했으면 그대로 위임, 없으면 속도 기반 폴백의 기울기 사용.
+        Gradient of h_b_stop
+        Delegate to the model if available; otherwise use the speed-based fallback
         """
         inner = getattr(self, "robot", None)
         if inner is not None and hasattr(inner, "grad_h_b_stop"):
