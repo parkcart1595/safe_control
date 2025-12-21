@@ -321,22 +321,31 @@ class BackupCBFQP(OcclusionUtils):
         if g_term.shape[0] < state_dim_T:
             g_term = np.vstack([g_term, np.zeros((state_dim_T - g_term.shape[0], g_term.shape[1]))])
 
-        Lfh_b_T = grad_h_b_T @ Phi_T @ f_term
+        u_pi_T = self._u_pi_at(phi_T, self.occlusion_scenarios, t=self.T_horizon)
+        f_pi_T = self.robot.f(phi_T) + self.robot.g(phi_T) @ u_pi_T
+
+        Lfh_b_T = grad_h_b_T @ (Phi_T @ f_term - f_pi_T)
         Lgh_b_T = grad_h_b_T @ Phi_T @ g_term
+        rhs_b   = float(Lfh_b_T + self.alpha * h_b_T)
+        A_list.append(-Lgh_b_T)
+        b_list.append([[rhs_b]])
 
-        if np.all(np.isfinite(Lgh_b_T)) and np.all(np.isfinite(Lfh_b_T)) and np.all(np.isfinite(h_b_T)):
-            # A_list.append(-Lgh_b_T)
-            # b_list.append(Lfh_b_T + self.alpha * h_b_T)
-            rhs_b = float(Lfh_b_T + self.alpha * h_b_T)
+        # Lfh_b_T = grad_h_b_T @ Phi_T @ f_term
+        # Lgh_b_T = grad_h_b_T @ Phi_T @ g_term
 
-            # Skip degenerate constraint that is infeasible by construction
-            if np.linalg.norm(Lgh_b_T) < 1e-9 and rhs_b < 0.0:
-                if self.debug:
-                    print(f"[backup] skip degenerate (||Lgh||≈0, rhs={rhs_b:.3e}<0)")
-            else:
-                # print("loop_feasible in")
-                A_list.append(-Lgh_b_T)
-                b_list.append(np.array([[rhs_b]]))
+        # if np.all(np.isfinite(Lgh_b_T)) and np.all(np.isfinite(Lfh_b_T)) and np.all(np.isfinite(h_b_T)):
+        #     # A_list.append(-Lgh_b_T)
+        #     # b_list.append(Lfh_b_T + self.alpha * h_b_T)
+        #     rhs_b = float(Lfh_b_T + self.alpha * h_b_T)
+
+        #     # Skip degenerate constraint that is infeasible by construction
+        #     if np.linalg.norm(Lgh_b_T) < 1e-9 and rhs_b < 0.0:
+        #         if self.debug:
+        #             print(f"[backup] skip degenerate (||Lgh||≈0, rhs={rhs_b:.3e}<0)")
+        #     else:
+        #         # print("loop_feasible in")
+        #         A_list.append(-Lgh_b_T)
+        #         b_list.append(np.array([[rhs_b]]))
 
         # 7) If no constraints, use nominal control
         num_constraints = len(A_list)
