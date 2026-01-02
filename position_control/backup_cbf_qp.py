@@ -33,7 +33,7 @@ class BackupCBFQP(OcclusionUtils):
             robot=robot,
             robot_spec=robot_spec,
             sensing_range=self.sensing_range,
-            barrier_fn=self._occlusion_barrier_softmax_curved,
+            barrier_fn=self._occlusion_barrier_smax_curved,
         )
 
         self.setup_control_problem()
@@ -41,18 +41,18 @@ class BackupCBFQP(OcclusionUtils):
         target = self.robot
         try:
             if hasattr(target, "set_occ_barrier_fn"):
-                target.set_occ_barrier_fn(self._occlusion_barrier_softmax_curved)
+                target.set_occ_barrier_fn(self._occlusion_barrier_smax_curved)
             elif hasattr(target, "robot") and hasattr(target.robot, "set_occ_barrier_fn"):
-                target.robot.set_occ_barrier_fn(self._occlusion_barrier_softmax_curved)
+                target.robot.set_occ_barrier_fn(self._occlusion_barrier_smax_curved)
             else:
                 print("[BackupCBFQP][WARN] Could not inject occlusion barrier callback "
                     "(no set_occ_barrier_fn on robot).")
         except Exception as e:
             print(f"[BackupCBFQP][WARN] Failed to inject occ barrier callback: {e}")
     
-    def _occlusion_barrier_softmax_curved(self, pos, scenario, tau=0.0):
+    def _occlusion_barrier_smax_curved(self, pos, scenario, tau=0.0):
         """
-        Softmax occlusion barrier built from two tangent half-spaces and
+        smooth-max occlusion barrier built from two tangent half-spaces and
         an expanded obstacle arc. Returns (h_tilde, grad_pos, risk_normal_vec).
         """
         p = scenario['robot_pos']       # robot position
@@ -68,69 +68,42 @@ class BackupCBFQP(OcclusionUtils):
             return None, None, None
         
         pos = np.asarray(pos, float).reshape(2,)
-        x, y = pos
 
-        R_occ = pi_adv * float(tau)
-        # --- tangent halfspaces (use first 2 rows) ---
-        a1, a2 = A[3], A[1]
-        beta1, beta2 = b0[3], b0[1]
-
-        # Outside wedge with radius margin
-        h1 = a1 @ pos - beta1 - R - R_occ
-        h2 = a2 @ pos - beta2 - R - R_occ
-        
-        A_stack = []
-        if h1 >=0:
-            A_stack.append(a1)
-        if h2 >=0:
-            A_stack.append(a2)
-            
-        if A_stack:
-            risk_normal_vec = np.vstack(A_stack)
+        if 'v_expand_vec' in scenario:
+            v_expand = scenario['v_expand_vec']
         else:
-            risk_normal_vec = np.empty((0,2))
-
+            v_expand = pi_adv
         # --- expanded obstacle disk ---
-        R_occ = pi_adv * float(tau)
-        dx_o = x - c[0]
-        dy_o = y - c[1]
-        # Outside expanded disk with radius margin.
-        d = np.hypot(dx_o, dy_o)
-        R_tot = R + R_o + R_occ
-        h3 = d - R_tot
+        R_occ =  R + v_expand * float(tau)
 
-        h_i = np.array([h1, h2, h3], dtype=float)
-
-        if not np.all(np.isfinite(h_i)):
+        # primitives: phi_k(p) = a_k^T p - b_k - delta  (inside inflated poly => <=0)
+        h_vec = (A @ pos) - b0 - R_occ    # (K,)
+        if not np.all(np.isfinite(h_vec)):
             return None, None, None
 
-        # Softmax aggregation.
-        M = h_i.size
-        max_h = np.max(h_i)
-
-        z = np.exp(kappa * (h_i - max_h))
+        # Smoth-max via log-sum-exp
+        max_h = np.max(h_vec)
+        z = np.exp(kappa * (h_vec - max_h))
         Z = np.sum(z)
         if not np.isfinite(Z) or Z <= 0.0:
             return None, None, None
-
-        lse = max_h + np.log(Z)
-        h_tilde = (lse - np.log(M)) / kappa
-
-        # Spatial gradients for each h_i.
-        dh1 = a1
-        dh2 = a2
-        eps = 1e-9
-        dh3 = np.array([dx_o, dy_o]) / max(eps, d)
         
+        # smooth-max value
+        K = h_vec.size
+        h_tilde = (max_h + np.log(Z) - np.log(K)) / kappa
 
-        grads = np.vstack([dh1, dh2, dh3])  # (4,2)
+        # # gradient: sum_k lambda_k * a_k
+        # lam = z / Z
+        # h_tilde = (max_h + np.log(Z) - np.log(K)) / kappa
 
-        lambda_i = z / Z
-        grad_pos = (lambda_i[:, None] * grads).sum(axis=0, keepdims=True)
+        # gradient
+        lam = z / Z
+        grad_pos = (lam[:, None] * A).sum(axis=0, keepdims=True)
 
-        if not np.all(np.isfinite(grad_pos)):
-            return None, None, None
-        
+        # for debug/visualization: normals of "active-ish" facets
+        active = (h_vec >= 0.0)
+        risk_normal_vec = A[active] if np.any(active) else np.empty((0,2))
+
         return float(h_tilde), grad_pos, risk_normal_vec
     
     def setup_control_problem(self):
@@ -252,12 +225,34 @@ class BackupCBFQP(OcclusionUtils):
 
                     pos_i = phi_i[0:2]  # (2,1)
 
-                    h_tilde, grad_pos, _ = self._occlusion_barrier_softmax_curved(
+                    h_tilde, grad_pos, _ = self._occlusion_barrier_smax_curved(
                         pos_i, scenario, tau
                     )
                     
                     if h_tilde is None or grad_pos is None:
                         continue
+
+                    if 'v_expand_vec' in scenario:
+                        v_exp = scenario['v_expand_vec']
+                    else:
+                        v_exp = np.full(len(scenario['b0']), scenario.get('v_adv_max', 0.5))
+
+                    R = self.robot_spec['radius']
+                    A_sc = scenario['A']
+                    b0_sc = scenario['b0']
+                    
+                    delta_vec = v_exp * float(tau)
+                    
+                    # h_vec = A p - b0 - delta - R
+                    h_vec = (A_sc @ pos_i.flatten()) - b0_sc - delta_vec - R
+                    
+                    # Log-Sum-Exp 
+                    max_h = np.max(h_vec)
+                    z = np.exp(self.kappa * (h_vec - max_h))
+                    Z = np.sum(z)
+                    lam = z / Z  # shape: (K,)
+
+                    dh_dt = np.dot(lam, -v_exp)
 
                     # Pad gradient to the full backup state dimension
                     state_dim = Phi_i.shape[0]
@@ -280,13 +275,13 @@ class BackupCBFQP(OcclusionUtils):
                     else:
                         g_x_pad = g_x
 
-                    Lfh = grad_h_phi @ (Phi_i @ f_x_pad - f_pi_phi)     # (1,1)
+                    Lfh = grad_h_phi @ (Phi_i @ f_x_pad)     # (1,1)
                     Lgh = grad_h_phi @ Phi_i @ g_x_pad                  # (1,2)
                     
                     if not (np.all(np.isfinite(Lgh)) and np.all(np.isfinite(Lfh))):
                         continue
 
-                    rhs = float(Lfh + self.alpha * h_tilde)
+                    rhs = float(Lfh + dh_dt + self.alpha * h_tilde)
 
                     # If control has almost no effect but rhs < 0, skip this
                     if np.linalg.norm(Lgh) < 1e-9 and rhs < 0.0:
@@ -324,7 +319,7 @@ class BackupCBFQP(OcclusionUtils):
         u_pi_T = self._u_pi_at(phi_T, self.occlusion_scenarios, t=self.T_horizon)
         f_pi_T = self.robot.f(phi_T) + self.robot.g(phi_T) @ u_pi_T
 
-        Lfh_b_T = grad_h_b_T @ (Phi_T @ f_term - f_pi_T)
+        Lfh_b_T = grad_h_b_T @ (Phi_T @ f_term)
         Lgh_b_T = grad_h_b_T @ Phi_T @ g_term
         rhs_b   = float(Lfh_b_T + self.alpha * h_b_T)
         A_list.append(-Lgh_b_T)

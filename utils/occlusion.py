@@ -90,7 +90,7 @@ class OcclusionUtils:
         path = Path(poly)
         return path.contains_point((float(pt[0]), float(pt[1])), radius=1e-12)
     
-    def _build_occlusion_scenario(self, robot_state, obs):
+    def _build_occlusion_scenario(self, robot_state, obs, is_static=False):
         """
         Build an occlusion scenario for a single circular obstacle.
 
@@ -104,6 +104,12 @@ class OcclusionUtils:
               'poly'      : (4, 2) occlusion polygon vertices
             }
             Returns None if no valid occlusion is formed.
+        Polygon Order: [t1, t2, far2, far1] where
+        # Edge 0: t1 -> t2 (Front Facet)
+        # Edge 1: t2 -> far2 (Side Facet 1)
+        # Edge 2: far2 -> far1 (Back Facet)
+        # Edge 3: far1 -> t1 (Side Facet 2)
+        poly = np.vstack([t1, t2, far2, far1])
         """
 
         px = float(robot_state[0, 0])
@@ -152,18 +158,31 @@ class OcclusionUtils:
         far2 = p + sensing_R * dir2
 
         # occlusion polygon: [t1, t2, far2, far1]
-        poly = np.vstack([t1, t2, far2, far1])
+        poly_pts = np.vstack([t1, t2, far2, far1])
+        poly = Path(poly_pts)
 
-        A, b0 = self._polygon_to_halfspaces(poly)
+        A, b0 = self._polygon_to_halfspaces(poly_pts)
         if A is None:
             return None
+
+        # generate expand velocity vetors (default is all v_adv)
+        v_expand_vec = np.full(len(b0), v_adv)
+
+        if is_static:
+            # vec_robot_to_obs = c - p
+            # vec_robot_to_obs /= np.linalg.norm(vec_robot_to_obs)
+
+            # for i in range(len(A)):
+            #     pass
+            v_expand_vec[0] = 0.0
         
         scenario = {
             'A': A,
             'b0': b0,
+            'v_expand_vec': v_expand_vec,
             'v_adv_max': v_adv,
             'arc_adv': arc_adv,
-            'poly': poly,
+            'poly': poly_pts,
             ## For arc softmax
             'robot_pos': p,
             'obs_center': c,
@@ -221,7 +240,14 @@ class OcclusionUtils:
 
             visible_obs.append(obs)
 
-            sc = self._build_occlusion_scenario(robot_state, obs)
+            # verify type flag
+            if len(obs) >= 8:
+                obs_type = int(obs[7])
+                is_static_obs = (obs_type == 0) # 0: Static, 1: Dynamic
+            else:
+                is_static_obs = False
+
+            sc = self._build_occlusion_scenario(robot_state, obs, is_static=is_static_obs)
             if sc is not None and sc.get('poly') is not None:
                 occl_scenarios.append(sc)
 

@@ -234,50 +234,68 @@ class DoubleIntegrator2D:
             A    = sc['A']
             b0   = sc['b0']
             vadv = sc['v_adv_max']
-            c = sc['obs_center']
-            R_o = sc['obs_radius']
 
-            a1, a2   = A[3], A[1]
-            beta1, beta2 = b0[3], b0[1]
+            # classify static or dynamic obstacles
+            if 'v_expand_vec' in sc:
+                v_expand = sc['v_expand_vec'] # Shape (K,)
+            else:
+                v_expand = np.full(len(b0), sc['v_adv_max'])
+
+            tau = float(t) if t is not None else 0.0
+            tau = max(0.0, min(tau, 3.0))
+
+            delta = R + v_expand * tau
+            h_vec = (A @ p) - b0 - delta
+
+            # find active facets
+            active_indices = np.where(h_vec >= 0.0)[0]
+            if len(active_indices) > 0:
+                # find most critical facet
+                best_idx_in_active = np.argmin(h_vec[active_indices])
+                target_idx = active_indices[best_idx_in_active]
+
+                # choose the corresponding normal vector
+                selected_normal = A[target_idx]
+
+                norm = np.linalg.norm(selected_normal)
+                if norm > 1e-9:
+                    direction = selected_normal / norm
+                    v_target = direction * vadv
+                    A_stack.append(v_target)
+
+            # active = (h_vec >= 0.0)  # outside wrt inflated poly
+            # if np.any(active):
+            #     # calculate selected normal vectors
+            #     avg_normal = A[active].mean(axis=0)
+
+            #     # Calculate the magnitude normal vector
+            #     norm = np.linalg.norm(avg_normal)
+
+            #     if norm > 1e-9:
+            #         direction = avg_normal / norm
+
+            #         v_target = direction * vadv
+
+            #         A_stack.append(v_target)
+
+        if len(A_stack) == 0:
+            return np.zeros(2, dtype=float)
+        
+        A_all = np.vstack(A_stack)
+        # v_ref = A_all.mean(axis=0)
+
+        v_avg = A_all.mean(axis=0)
+        v_norm = np.linalg.norm(v_avg)
+        
+        if v_norm > 1e-9:
+            max_speed = np.max([np.linalg.norm(v) for v in A_stack])
+            # avg_speed = np.mean([np.linalg.norm(v) for v in A_stack])
+            v_ref = (v_avg / v_norm) * max_speed
+        else:
+            v_ref = v_avg
+        # print(f"DEBUG: v_ref from occlusion backup: {v_ref}")
             
-            x, y = p
-            R_occ = vadv * t
-            dx_o = x - c[0]
-            dy_o = y - c[1]
-            d = np.hypot(dx_o, dy_o)
-            R_tot = R + R_o + R_occ
-            h3 = d - R_tot
-            p_rel = np.array([x - c[0],
-                              y - c[1]])
-            p_rel_mag = np.linalg.norm(p_rel)
-            arc_adv = vadv * p_rel / p_rel_mag
-            arc_adv = arc_adv.flatten()
-
-            if h3 > 0.0:
-                A_stack.append(arc_adv)
-
-            T_occ = vadv * t
-            # h1/h2 are positive when outside the wedge (safe side)
-            h1 = float(a1 @ p - beta1 - R - T_occ)
-            h2 = float(a2 @ p - beta2 - R - T_occ)
-
-            if h1 > 0.0:
-                norm_a1 = np.linalg.norm(a1)
-                vec_a1 = (a1 / norm_a1) * vadv
-                A_stack.append(vec_a1)
-            if h2 > 0.0:
-                norm_a2 = np.linalg.norm(a2)
-                vec_a2 = (a2 / norm_a2) * vadv
-                A_stack.append(vec_a2)
-
-            if len(A_stack) == 0:
-                return np.zeros(2, dtype=float)
-            
-            A_all = np.vstack(A_stack)  # (M_tot, 2)
-            # print(f"A_all: {A_all}")
-            v_ref = A_all.mean(axis=0)
-            
-        return v_ref
+        return v_avg
         
     def backup_input(self, X, k_a=1.0):
         """
@@ -313,15 +331,15 @@ class DoubleIntegrator2D:
         self.pid_occ["t_prev"] = t
         
         e = v - v_ref
-        I = self.pid_occ["I"] + e * dt_eff
+        # I = self.pid_occ["I"] + e * dt_eff
 
-        u_unsat = -Kp * e - Ki * I - k_d * v
+        u_unsat = -Kp * e - k_d * v
 
         u = np.clip(u_unsat, -a_lim, a_lim)
 
-        # anti-windup
-        I = np.clip(I, -aw, aw)
-        self.pid_occ["I"] = I
+        # # anti-windup
+        # I = np.clip(I, -aw, aw)
+        # self.pid_occ["I"] = I
 
         # limite acceleration when near v_max
         eps = 1e-6

@@ -22,7 +22,7 @@ class BaseRobotDyn(BaseRobot):
         
         # Occlusion visualization handles
         self.occlusion_patches = []
-        self.occlusion_softmax_contours = []
+        self.occlusion_smax_contours = []
         self.occlusion_future_contours = []
         self._occ_arc_lines = []
         self._occ_barrier_cb = None
@@ -523,7 +523,7 @@ class BaseRobotDyn(BaseRobot):
         Z[~mask] = np.nan
         return Z
 
-    def _curved_softmax_value(self, pos, scenario, R_s, kappa):
+    def _curved_smax_value(self, pos, scenario, R_s, kappa):
         """
         h̃(x) from the same definition as BackupCBFQP._occlusion_barrier_softmax_curved
         but at tau = 0, using:
@@ -595,48 +595,100 @@ class BaseRobotDyn(BaseRobot):
             except Exception:
                 pass
         lst.clear()
-        
+
+    def _halfspace_intersection_polygon(self, A, b, eps=1e-9):
+        """
+        Build polygon vertices of the convex polytope {p | A p <= b}
+        by enumerating pairwise line intersections (2D).
+        Assumes each row of A is an outward unit normal (as in occlusion._polygon_to_halfspaces).
+        """
+        import numpy as np
+
+        A = np.asarray(A, float)
+        b = np.asarray(b, float).reshape(-1,)
+        K = A.shape[0]
+        if K < 3:
+            return None
+
+        pts = []
+        for i in range(K):
+            for j in range(i + 1, K):
+                Ai = np.stack([A[i], A[j]], axis=0)      # (2,2)
+                bi = np.array([b[i], b[j]], dtype=float) # (2,)
+                det = np.linalg.det(Ai)
+                if abs(det) < 1e-10:
+                    continue
+                x = np.linalg.solve(Ai, bi)              # (2,)
+                if np.all(A @ x <= b + eps):
+                    pts.append(x)
+
+        if len(pts) < 3:
+            return None
+
+        pts = np.unique(np.round(np.array(pts), 12), axis=0)
+        c = pts.mean(axis=0)
+        ang = np.arctan2(pts[:, 1] - c[1], pts[:, 0] - c[0])
+        order = np.argsort(ang)
+        return pts[order]
+
+    def _smax_field_poly(self, XX, YY, A, b0, delta, kappa):
+        """
+        Vectorized LSE smooth-max field for h_vec = A p - b0 - delta.
+        XX,YY: meshgrid arrays
+        returns H with same shape as XX
+        """
+        import numpy as np
+
+        A = np.asarray(A, float)                 # (K,2)
+        b0 = np.asarray(b0, float).reshape(-1,)  # (K,)
+        K = A.shape[0]
+
+        P = np.stack([XX, YY], axis=2)           # (H,W,2)
+        h = P @ A.T - b0[None, None, :] - delta # (H,W,K)
+
+        m = np.max(h, axis=2, keepdims=True)     # (H,W,1)
+        z = np.exp(float(kappa) * (h - m))
+        Z = np.sum(z, axis=2)                    # (H,W)
+        H = (m.squeeze(-1) + np.log(Z) - np.log(float(K))) / float(kappa)
+        return H
+
+
     def update_occlusion_polygons(self, occlusion_scenarios,
                                   kappa=10.0,
                                   show_true_occ=True,
                                   show_true_occ_T=True,
-                                  show_softmax_occ_T=True,
+                                  show_smax_occ_T=True,
                                   T_rollout=None,
                                   grid_res=0.05):
-        
+
         # 1) reset previous patches
         self._clear_artists(self.occlusion_patches)
-        self._clear_artists(self.occlusion_softmax_contours)
+        self._clear_artists(self.occlusion_smax_contours)
         self._clear_artists(self.occlusion_future_contours)
-        self._clear_artists(self._occ_arc_lines)
-        if not show_true_occ and not show_true_occ_T and not show_softmax_occ_T:
+        self._clear_artists(self._occ_arc_lines)  # legacy list (no longer used)
+        if not show_true_occ and not show_true_occ_T and not show_smax_occ_T:
+            return
+        if occlusion_scenarios is None or len(occlusion_scenarios) == 0:
             return
 
-        if not occlusion_scenarios:
-            return
+        import numpy as np
+        import matplotlib.patches as patches
+
+        R = float(self.robot_spec.get('radius', 0.0))
 
         for sc in occlusion_scenarios:
-            poly = sc.get('poly', None)
-            t1 = sc.get('t1', None)
-            t2 = sc.get('t2', None)
-            if poly is None or t1 is None or t2 is None:
+            poly = sc.get('poly', None)   # U0 polygon: [t1,t2,far2,far1]
+            A    = sc.get('A', None)
+            b0   = sc.get('b0', None)
+            if poly is None or A is None or b0 is None:
                 continue
 
-            p = np.asarray(sc['robot_pos'], float)
-            c = np.asarray(sc['obs_center'], float)
-            R_o = float(sc['obs_radius'])
+            poly = np.asarray(poly, float)
 
-            if poly.shape[0] >= 4:
-                far = np.asarray(poly[3], float)
-            else:
-                far = np.asarray(poly[2], float)
-            R_s = float(np.linalg.norm(far - p))
-
-            # 1) geometric real occluded region
-            U0 = self._build_occlusion_U0(p, c, R_o, R_s, t1, t2)
-            if show_true_occ and U0 is not None:
+            # --- (A) True U0 polygon patch (no inflation, just geometric U0) ---
+            if show_true_occ:
                 patch = patches.Polygon(
-                    U0,
+                    poly,
                     closed=True,
                     fill=True,
                     facecolor='gray',
@@ -647,53 +699,155 @@ class BaseRobotDyn(BaseRobot):
                 self.ax.add_patch(patch)
                 self.occlusion_patches.append(patch)
 
-            built = None
-            d = None
-            if T_rollout is not None and T_rollout > 0.0:
-                v_adv = float(sc.get('v_adv_max', 0.5))
-                d = float(v_adv * T_rollout)
-                built = self._build_occlusion_UT_offset(p, c, R_o, R_s, t1, t2, d, n_arc=80)
+            # if no rollout requested, skip T-level plots
+            if T_rollout is None or T_rollout <= 0.0:
+                continue
 
-            # 3) Future occlusion U_T via tangent offsets
-            if show_true_occ_T and built is not None:
-                UT, aux = built
-                patchT = patches.Polygon(
-                    UT, closed=True, fill=True,
-                    facecolor="#e41d45", edgecolor='none',
-                    alpha=0.22, zorder=0.9
-                )
-                self.ax.add_patch(patchT)
-                self.occlusion_future_contours.append(patchT)
+            if 'v_expand_vec' in sc:
+                v_exp = sc['v_expand_vec']
+            else:
+                v_exp = float(sc.get('v_adv_max', 0.0))
 
-            if show_softmax_occ_T and built is not None:
-                UT, _ = built
-                (n1b, beta1), (n2b, beta2), R_eff = self._ut_halfspaces_params(p, c, R_o, t1, t2, d)
+            tauT = float(T_rollout)
+            deltaT = v_exp * tauT  # matches controller: r_rob + pi_adv*tau
 
-                xmin, xmax = UT[:, 0].min(), UT[:, 0].max()
-                ymin, ymax = UT[:, 1].min(), UT[:, 1].max()
-                pad = 0.75
-                xs = np.arange(xmin - pad, xmax + pad, grid_res)
-                ys = np.arange(ymin - pad, ymax + pad, grid_res)
-                XX, YY = np.meshgrid(xs, ys)
+            # --- (B) Build expanded polygon UT from shifted halfspaces: A p <= b0 + deltaT ---
+            bT = np.asarray(b0, float).reshape(-1,) + deltaT
+            UT = self._halfspace_intersection_polygon(A, bT, eps=1e-8)
 
-                htilde_T = self._softmin_field_UT(
-                    XX, YY, p, c, R_s,
-                    n1b, beta1, n2b, beta2, R_eff,
-                    kappa=float(kappa)
-                )
+            if UT is not None:
+                # --- (B1) True UT patch ---
+                if show_true_occ_T:
+                    patchT = patches.Polygon(
+                        UT, closed=True, fill=True,
+                        facecolor="#e41d45", edgecolor='none',
+                        alpha=0.22, zorder=0.9
+                    )
+                    self.ax.add_patch(patchT)
+                    self.occlusion_future_contours.append(patchT)
 
-                ut_color = "#f80101ea"
+                # --- (B2) Smooth-max levelset (h=0) for tau=T ---
+                if show_smax_occ_T:
+                    xmin, xmax = UT[:, 0].min(), UT[:, 0].max()
+                    ymin, ymax = UT[:, 1].min(), UT[:, 1].max()
+                    pad = 0.75
+                    xs = np.arange(xmin - pad, xmax + pad, grid_res)
+                    ys = np.arange(ymin - pad, ymax + pad, grid_res)
+                    XX, YY = np.meshgrid(xs, ys)
 
-                csT = self.ax.contour(
-                    XX, YY, htilde_T,
-                    levels=[0.0],
-                    colors=ut_color,
-                    linestyles='-',
-                    linewidths=1.5,
-                    zorder=5
-                )
-                for coll in csT.collections:
-                    self.occlusion_softmax_contours.append(coll)
+                    H = self._smax_field_poly(XX, YY, A, b0, deltaT, kappa=float(kappa))
+
+                    ut_color = "#f80101ea"
+                    csT = self.ax.contour(
+                        XX, YY, H,
+                        levels=[0.0],
+                        colors=ut_color,
+                        linestyles='-',
+                        linewidths=1.5,
+                        zorder=5
+                    )
+                    for coll in csT.collections:
+                        self.occlusion_smax_contours.append(coll)
+
+        
+    # def update_occlusion_polygons(self, occlusion_scenarios,
+    #                               kappa=10.0,
+    #                               show_true_occ=True,
+    #                               show_true_occ_T=True,
+    #                               show_softmax_occ_T=True,
+    #                               T_rollout=None,
+    #                               grid_res=0.05):
+        
+    #     # 1) reset previous patches
+    #     self._clear_artists(self.occlusion_patches)
+    #     self._clear_artists(self.occlusion_softmax_contours)
+    #     self._clear_artists(self.occlusion_future_contours)
+    #     self._clear_artists(self._occ_arc_lines)
+    #     if not show_true_occ and not show_true_occ_T and not show_softmax_occ_T:
+    #         return
+
+    #     if not occlusion_scenarios:
+    #         return
+
+    #     for sc in occlusion_scenarios:
+    #         poly = sc.get('poly', None)
+    #         t1 = sc.get('t1', None)
+    #         t2 = sc.get('t2', None)
+    #         if poly is None or t1 is None or t2 is None:
+    #             continue
+
+    #         p = np.asarray(sc['robot_pos'], float)
+    #         c = np.asarray(sc['obs_center'], float)
+    #         R_o = float(sc['obs_radius'])
+
+    #         if poly.shape[0] >= 4:
+    #             far = np.asarray(poly[3], float)
+    #         else:
+    #             far = np.asarray(poly[2], float)
+    #         R_s = float(np.linalg.norm(far - p))
+
+    #         # 1) geometric real occluded region
+    #         U0 = self._build_occlusion_U0(p, c, R_o, R_s, t1, t2)
+    #         if show_true_occ and U0 is not None:
+    #             patch = patches.Polygon(
+    #                 U0,
+    #                 closed=True,
+    #                 fill=True,
+    #                 facecolor='gray',
+    #                 edgecolor='none',
+    #                 alpha=0.25,
+    #                 zorder=1
+    #             )
+    #             self.ax.add_patch(patch)
+    #             self.occlusion_patches.append(patch)
+
+    #         built = None
+    #         d = None
+    #         if T_rollout is not None and T_rollout > 0.0:
+    #             v_adv = float(sc.get('v_adv_max', 0.5))
+    #             d = float(v_adv * T_rollout)
+    #             built = self._build_occlusion_UT_offset(p, c, R_o, R_s, t1, t2, d, n_arc=80)
+
+    #         # 3) Future occlusion U_T via tangent offsets
+    #         if show_true_occ_T and built is not None:
+    #             UT, aux = built
+    #             patchT = patches.Polygon(
+    #                 UT, closed=True, fill=True,
+    #                 facecolor="#e41d45", edgecolor='none',
+    #                 alpha=0.22, zorder=0.9
+    #             )
+    #             self.ax.add_patch(patchT)
+    #             self.occlusion_future_contours.append(patchT)
+
+    #         if show_softmax_occ_T and built is not None:
+    #             UT, _ = built
+    #             (n1b, beta1), (n2b, beta2), R_eff = self._ut_halfspaces_params(p, c, R_o, t1, t2, d)
+
+    #             xmin, xmax = UT[:, 0].min(), UT[:, 0].max()
+    #             ymin, ymax = UT[:, 1].min(), UT[:, 1].max()
+    #             pad = 0.75
+    #             xs = np.arange(xmin - pad, xmax + pad, grid_res)
+    #             ys = np.arange(ymin - pad, ymax + pad, grid_res)
+    #             XX, YY = np.meshgrid(xs, ys)
+
+    #             htilde_T = self._softmin_field_UT(
+    #                 XX, YY, p, c, R_s,
+    #                 n1b, beta1, n2b, beta2, R_eff,
+    #                 kappa=float(kappa)
+    #             )
+
+    #             ut_color = "#f80101ea"
+
+    #             csT = self.ax.contour(
+    #                 XX, YY, htilde_T,
+    #                 levels=[0.0],
+    #                 colors=ut_color,
+    #                 linestyles='-',
+    #                 linewidths=1.5,
+    #                 zorder=5
+    #             )
+    #             for coll in csT.collections:
+    #                 self.occlusion_softmax_contours.append(coll)
                     
 
     def set_occ_barrier_fn(self, fn):
@@ -708,7 +862,7 @@ class BaseRobotDyn(BaseRobot):
         else:
             raise AttributeError("Underlying robot does not support set_occ_barrier_fn")
         
-    def _draw_softmax_levelset(self, scenario, tau, bbox, grid_res, color, lw=1.8, ls='-'):
+    def _draw_smax_levelset(self, scenario, tau, bbox, grid_res, color, lw=1.8, ls='-'):
         """
         scenario: dict used by BackupCBFQP (A, b0, robot_pos, obs_center, obs_radius, v_adv_max, ...)
         tau     : 0.0 or T
@@ -734,7 +888,7 @@ class BaseRobotDyn(BaseRobot):
             levels=[0.0], colors=color, linewidths=lw, linestyles=ls, zorder=5
         )
         for coll in cs.collections:
-            self.occlusion_softmax_contours.append(coll)
+            self.occlusion_smax_contours.append(coll)
 
     def set_terminal_backup_context(self, occlusion_scenarios, T, kappa=None, rho_T=0.05):
         """

@@ -115,9 +115,13 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         if len(self.obs) == 0:
             return
 
-        if not (isinstance(self.obs, np.ndarray) and self.obs.ndim == 2 and self.obs.shape[1] == 7):
-            self.obs = np.array(self.obs, dtype=float).reshape(-1, 7)
-
+        if not (isinstance(self.obs, np.ndarray) and self.obs.ndim == 2 and self.obs.shape[1] == 8):
+            try:
+                self.obs = np.array(self.obs, dtype=float).reshape(-1, 8)
+            except ValueError as e:
+                print(f"[Error] self.obs size is {np.array(self.obs).size}, cannot reshape to (-1, 8). Check data consistency.")
+                raise e
+            
         self._ensure_obs_meta()
 
         for i in range(self.obs.shape[0]):
@@ -125,7 +129,9 @@ class LocalTrackingControllerDyn(LocalTrackingController):
             meta = self.obs_meta[i]
             mode   = int(meta.get('mode', 0))
             v_max  = float(meta.get('v_max', np.hypot(vx, vy)))
-            theta  = float(meta.get('theta', np.arctan2(vy, vx) if v_max>1e-9 else 0.0))
+            if 'theta' not in meta:
+                meta['theta'] = np.arctan2(vy, vx) if v_max > 1e-9 else 0.0 
+            theta  = float(meta['theta'])
 
             if mode == 1:
                 # --- Random walker: heading noise + occasional large turn ---
@@ -334,7 +340,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
                 kappa=kappa,
                 show_true_occ=True,
                 show_true_occ_T=True,
-                show_softmax_occ_T=False,
+                show_smax_occ_T=False,
                 T_rollout=getattr(self.pos_controller, "T_horizon", 3.0),
                 grid_res=0.05,
             )
@@ -367,7 +373,24 @@ def single_agent_main(controller_type):
          [20, 7.5, 0],
     ]
 
-    # Define dynamic obs
+    # Define obstacles with type flag
+    # format: [x, y, r, vx, vy, y_min, y_max, type]
+    # type 0: static (known)
+    # type 1: dynamic (unknown)
+    # known_obs = np.array([
+    #     [2.2, 5.0, 0.2, 0.0, 0.0, 0],  # Static (Known)
+    #     [3.0, 5.0, 0.2, 0.0, 0.0, 0],  # Static
+    #     [4.0, 9.0, 0.3, 0.0, 0.0, 1],  # Dynamic/Unknown
+    #     [1.5, 10.0, 0.5, 0.0, 0.0, 0], # Static
+    #     [9.0, 11.0, 1.0, 0.0, 0.0, 1], # Dynamic/Unknown
+    #     [7.0, 7.0, 3.0, 0.0, 0.0, 0],
+    #     [4.0, 3.5, 1.5, 0.0, 0.0, 0],
+    #     [10.0, 7.3, 0.4, 0.0, 0.0, 0],
+    #     [6.0, 13.0, 0.7, 0.0, 0.0, 0],
+    #     [5.0, 10.0, 0.6, 0.0, 0.0, 0],
+    #     [11.0, 5.0, 0.8, 0.0, 0.0, 0],
+    #     [13.5, 11.0, 0.6, 0.0, 0.0, 0]
+    # ])
     # known_obs = np.array([
     #     [15.0, 12.3, 0.5],  # obstacle 1
     #     # [8.0, 11.0, 0.5],  # obstacle 3
@@ -392,15 +415,15 @@ def single_agent_main(controller_type):
     # ])
     # Supermarket Scenario
     known_obs = np.array([
-        [8.0, 5.0, 0.5],  # obstacle 1
-        [10.0, 7.0, 0.5],  # obstacle 2
-        [12.0, 11.0, 0.5],  # obstacle 3
-        [14.0, 6.5, 0.5],  # obstacle 4
-        [16.0, 3.0, 0.5],  # obstacle 5
-        [18.0, 7.5, 0.5],  # obstacle 6
-        [20.0, 8.9, 0.5],  # obstacle 6
-        [22.0, 10.6, 0.5],  # obstacle 6
-        [24.0, 12.0, 0.5],  # obstacle 7
+        # [8.0, 5.0, 0.5, 1],  # obstacle 1
+        # [10.0, 7.0, 0.5, 1],  # obstacle 2
+        # [12.0, 11.0, 0.5, 1],  # obstacle 3
+        [14.0, 6.5, 0.5, 1],  # obstacle 4
+        [16.0, 3.0, 0.5, 1],  # obstacle 5
+        [18.0, 7.5, 0.5, 1],  # obstacle 6
+        [20.0, 8.9, 0.5, 1],  # obstacle 6
+        [22.0, 10.6, 0.5, 1],  # obstacle 6
+        [24.0, 12.0, 0.5, 1],  # obstacle 7
     ])
     # LoS scenario static/dyn
     # known_obs = np.array([
@@ -451,21 +474,26 @@ def single_agent_main(controller_type):
     #     [10.0, 10.0, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
-    # wall w/ straight dyn obs
+    # # wall w/ straight dyn obs
     # known_obs = np.array([
-    #     [12.0, 5.0, 0.6],  # obstacle 3
-    #     [13.0, 5.5, 0.6],  # obstacle 5
-    #     [14.0, 6.0, 0.6],  # obstacle 7
-    #     [15.0, 6.5, 0.6],  # obstacle 9
-    #     [15.5, 2.0, 0.5],  # obstacle 11
+    #     [12.0, 5.0, 0.6, 0],  # obstacle 3
+    #     [13.0, 5.5, 0.6, 0],  # obstacle 5
+    #     [14.0, 6.0, 0.6, 0],  # obstacle 7
+    #     [15.0, 6.5, 0.6, 0],  # obstacle 9
+    #     [15.5, 2.0, 0.5, 0],  # obstacle 11
     #     # [2.0, 5.0, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
 
     RAND_OBS_ENABLE = True
-    dynamic_obs = []  
+    dynamic_obs = []
     for i, obs_info in enumerate(known_obs):
-        ox, oy, r = obs_info[:3]
+        # ox, oy, r = obs_info[:3]
+        ox, oy, r = obs_info[0], obs_info[1], obs_info[2]
+        if len(obs_info) >= 4:
+            obs_type = int(obs_info[3])
+        else:
+            obs_type = 0
         if i % 2 == 0:
             vx, vy = -0.15, -0.15
         else:
@@ -474,8 +502,9 @@ def single_agent_main(controller_type):
         # if i <= 3:
         #     vx, vy = 0.0, 0.0
         # else:
-        #     vx, vy = -0.0, 0.5
-        dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
+        #     vx, vy = -0.0, 0.0
+        # dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max])
+        dynamic_obs.append([ox, oy, r, vx, vy, y_min, y_max, obs_type])
     known_obs = np.array(dynamic_obs, dtype=float)
 
     rand_rows, rand_meta = LocalTrackingControllerDyn.make_random_obstacles7(
@@ -489,8 +518,10 @@ def single_agent_main(controller_type):
         rand_obs= RAND_OBS_ENABLE,
     )
             
-    if rand_rows.size:
-        known_obs = np.vstack([known_obs, rand_rows])
+    if rand_rows.size > 0:
+        type_column = np.ones((rand_rows.shape[0], 1))
+        rand_rows_8col = np.hstack((rand_rows, type_column))
+        known_obs = np.vstack([known_obs, rand_rows_8col])
 
     env_width = 24.0
     env_height = 15.0
@@ -571,9 +602,9 @@ def single_agent_main(controller_type):
     else:
         x_init = np.append(waypoints[0], 1.0)
     
-    if known_obs.shape[1] != 7:
-        # Append zero velocity columns when obstacle velocity is missing.
-        known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2))))
+    # if known_obs.shape[1] != 7:
+    #     # Append zero velocity columns when obstacle velocity is missing.
+    #     known_obs = np.hstack((known_obs, np.zeros((known_obs.shape[0], 2))))
     
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
@@ -596,6 +627,7 @@ def single_agent_main(controller_type):
         vx, vy = float(row[3]), float(row[4])
         vmag = float(np.hypot(vx, vy))
         theta0 = float(np.arctan2(vy, vx)) if vmag > 1e-9 else 0.0
+        obs_type = int(row[7])
         const_meta.append({'mode': 0, 'v_max': vmag, 'theta': theta0})
 
     meta = const_meta + rand_meta
