@@ -18,6 +18,11 @@ class BackupCBFQP(OcclusionUtils):
         self.num_obs = num_obs
         self.kappa = kappa
         self.occlusion_scenarios = []
+        self.last_num_constraints = None
+        self.last_qp_solve_time_ms = None
+        self.last_intervention = None
+        self.last_u_ref = None
+        self.last_u = None
         
         self.sensing_range = float(self.robot_spec.get('sensing_range', 10.0))
         self.debug = bool(self.robot_spec.get('debug_backup_qp', False))
@@ -90,7 +95,7 @@ class BackupCBFQP(OcclusionUtils):
         
         # smooth-max value
         K = h_vec.size
-        h_tilde = (max_h + np.log(Z) - np.log(K)) / kappa
+        h_tilde = max_h + (np.log(Z) - np.log(K)) / kappa
 
         # # gradient: sum_k lambda_k * a_k
         # lam = z / Z
@@ -144,27 +149,58 @@ class BackupCBFQP(OcclusionUtils):
         
     def solve_control_problem(self, robot_state, control_ref, obs_list):
         self.u_ref.value = control_ref['u_ref']
+        self.last_u_ref = np.array(self.u_ref.value, dtype=float).reshape(-1, 1)
         
         # 1) Build visible obstacles + occlusion scenarios (sensing range handled inside)
         visible_obs, occlusion_scenarios = self._filter_visible_and_build_occ(robot_state, obs_list)
         self.occlusion_scenarios = occlusion_scenarios
         no_obs = (len(visible_obs) == 0)
         no_occ = (len(self.occlusion_scenarios) == 0)
+        if self.debug:
+            print(f"[BackupCBFQP] visible_obs={len(visible_obs)} occlusion_scenarios={len(self.occlusion_scenarios)}")
+            if visible_obs:
+                rx, ry = float(robot_state[0, 0]), float(robot_state[1, 0])
+                dists = []
+                for obs in visible_obs:
+                    ox, oy, r_obs = float(obs[0]), float(obs[1]), float(obs[2])
+                    dists.append(np.hypot(ox - rx, oy - ry) - r_obs)
+                if dists:
+                    print(f"[BackupCBFQP] obs_dist_min={min(dists):.3f} obs_dist_max={max(dists):.3f}")
 
         # 2) If there is no obstacle and no occlusion, use nominal control
         if no_obs and no_occ:
             self.status = 'optimal'
+            # Keep QP stats visible even when the QP is skipped.
+            self.last_num_constraints = 0
+            self.last_qp_solve_time_ms = 0.0
+            self.last_intervention = "u_ref"
+            self.last_u = self.last_u_ref
             if self.debug:
                 print("[BackupCBFQP] no detected obstacle/occlusion -> use u_ref")
             return self.u_ref.value
 
         A_list, b_list = [], []
+        meta_list = []
 
         # 3) Compute backup trajectory under the backup policy
         phi_b, Phi_b, tau_points = self.robot.simulate_backup_trajectory(
             robot_state, self.T_horizon, self.dt_backup,
             occlusion_scenarios=None if no_occ else self.occlusion_scenarios
         )
+        if self.debug and not no_occ:
+            try:
+                min_h = float("inf")
+                for scenario in self.occlusion_scenarios:
+                    for i, tau in enumerate(tau_points):
+                        pos_i = phi_b[i].reshape(-1, 1)[0:2]
+                        h_tilde, _, _ = self._occlusion_barrier_smax_curved(pos_i, scenario, tau)
+                        if h_tilde is None:
+                            continue
+                        min_h = min(min_h, float(h_tilde))
+                if min_h != float("inf"):
+                    print(f"[BackupCBFQP] rollout_min_h={min_h:.3f}")
+            except Exception as e:
+                print(f"[BackupCBFQP][WARN] rollout_min_h check failed: {e}")
 
         # Pre-compute f(x), g(x) at current state for Lie derivatives
         f_x = self.robot.f(robot_state)   # (n,1)
@@ -183,7 +219,7 @@ class BackupCBFQP(OcclusionUtils):
             gamma1 = 1.0  # class k_1
             gamma2 = 1.0  # class k_2
 
-            for obs in visible_obs:
+            for obs_idx, obs in enumerate(visible_obs):
                 obs = np.asarray(obs, dtype=float).flatten()
                 ox, oy, r_obs = obs[:3]
                 if len(obs) >= 5:
@@ -214,10 +250,11 @@ class BackupCBFQP(OcclusionUtils):
                 if np.all(np.isfinite(A)) and np.isfinite(b):
                     A_list.append(A)
                     b_list.append(np.array([[b]]))
+                    meta_list.append({"kind": "obs", "obs_idx": obs_idx})
                     
         # 5) Occlusion constraints along the backup trajectory
         if not no_occ:
-            for scenario in self.occlusion_scenarios:
+            for sc_idx, scenario in enumerate(self.occlusion_scenarios):
                 for i in range(1, len(tau_points)):
                     tau = tau_points[i]
                     phi_i = phi_b[i].reshape(-1, 1)
@@ -292,21 +329,16 @@ class BackupCBFQP(OcclusionUtils):
                     # Standard CBF inequality: -L_g h u ≤ L_f h + α h
                     A_list.append(-Lgh)
                     b_list.append(np.array([[rhs]]))
+                    meta_list.append({"kind": "occ", "sc_idx": sc_idx, "tau": float(tau)})
                     
         # 6) Terminal backup set constraint
         phi_T = phi_b[-1].reshape(-1, 1)
         Phi_T = Phi_b[-1]
         
-        term_scn = None if no_occ else self.occlusion_scenarios[0]
-        self.robot.set_terminal_backup_context(
-            term_scn,
-            self.T_horizon,
-            kappa=self.kappa,
-            rho_T=0.1
-        )
-
-        h_b_T = self.robot.h_b_stop(phi_T)
-        grad_h_b_T = self.robot.grad_h_b_stop(phi_T)
+        if not no_occ:
+            term_scenarios = list(self.occlusion_scenarios)
+        else:
+            term_scenarios = [None]
 
         state_dim_T = Phi_T.shape[0]
         f_term = self.robot.f(robot_state)
@@ -319,11 +351,35 @@ class BackupCBFQP(OcclusionUtils):
         u_pi_T = self._u_pi_at(phi_T, self.occlusion_scenarios, t=self.T_horizon)
         f_pi_T = self.robot.f(phi_T) + self.robot.g(phi_T) @ u_pi_T
 
-        Lfh_b_T = grad_h_b_T @ (Phi_T @ f_term)
-        Lgh_b_T = grad_h_b_T @ Phi_T @ g_term
-        rhs_b   = float(Lfh_b_T + self.alpha * h_b_T)
-        A_list.append(-Lgh_b_T)
-        b_list.append([[rhs_b]])
+        for sc_idx, term_scn in enumerate(term_scenarios):
+            self.robot.set_terminal_backup_context(
+                term_scn,
+                self.T_horizon,
+                kappa=self.kappa,
+                rho_T=0.05
+            )
+
+            h_b_T = self.robot.h_b_stop(phi_T)
+            grad_h_b_T = self.robot.grad_h_b_stop(phi_T)
+            if self.debug:
+                try:
+                    print(f"[BackupCBFQP] h_b_T={float(h_b_T):.3f}")
+                except Exception:
+                    pass
+
+            if h_b_T is None or grad_h_b_T is None:
+                continue
+
+            # Lfh_b_T = grad_h_b_T @ (Phi_T @ f_term)
+            # Lgh_b_T = grad_h_b_T @ Phi_T @ g_term
+            # rhs_b   = float(Lfh_b_T + self.alpha * h_b_T)
+            Lfh_b_T = grad_h_b_T @ (Phi_T @ f_term - f_pi_T)
+            Lgh_b_T = grad_h_b_T @ Phi_T @ g_term
+            time_term = float(np.dot(lam, -v_exp))
+            rhs_b   = float(Lfh_b_T + time_term + self.alpha * h_b_T)
+            A_list.append(-Lgh_b_T)
+            b_list.append([[rhs_b]])
+            meta_list.append({"kind": "terminal", "tau": float(self.T_horizon), "sc_idx": sc_idx})
 
         # Lfh_b_T = grad_h_b_T @ Phi_T @ f_term
         # Lgh_b_T = grad_h_b_T @ Phi_T @ g_term
@@ -347,6 +403,10 @@ class BackupCBFQP(OcclusionUtils):
 
         if num_constraints == 0:
             self.status = 'optimal'
+            self.last_num_constraints = 0
+            self.last_qp_solve_time_ms = 0.0
+            self.last_intervention = "u_ref"
+            self.last_u = self.last_u_ref
             if self.debug:
                 print("[BackupCBFQP] no constraints -> use u_ref")
             return self.u_ref.value
@@ -355,14 +415,37 @@ class BackupCBFQP(OcclusionUtils):
         A_cbf_val = np.vstack(A_list).reshape(num_constraints, 2)
         b_cbf_val = np.vstack(b_list).reshape(num_constraints, 1)
 
+        # If u_ref already satisfies all constraints, skip the QP.
+        tol = float(self.robot_spec.get("intervention_tol", 1e-3))
+        u_ref = self.last_u_ref
+        violation = (A_cbf_val @ u_ref - b_cbf_val).flatten()
+        max_violation = float(np.max(violation))
+        input_ok = True
+        if u_ref is not None and "a_max" in self.robot_spec:
+            a_max = float(self.robot_spec.get("a_max", np.inf))
+            input_ok = bool(np.all(np.abs(u_ref.flatten()) <= a_max + tol))
+        if self.debug:
+            max_idx = int(np.argmax(violation))
+            meta = meta_list[max_idx] if max_idx < len(meta_list) else None
+            print(f"[BackupCBFQP] u_ref_max_violation={max_violation:.3e} input_ok={input_ok}")
+            print(f"[BackupCBFQP] u_ref={u_ref.flatten()} max_violation_meta={meta}")
+        if max_violation <= tol and input_ok:
+            self.status = 'optimal'
+            self.last_num_constraints = num_constraints
+            self.last_qp_solve_time_ms = 0.0
+            self.last_intervention = "u_ref"
+            self.last_u = u_ref
+            if self.debug:
+                print(f"[BackupCBFQP] u_ref feasible (max_violation={max_violation:.3e}) -> use u_ref")
+            return self.u_ref.value
+
         self.A_cbf.value[:, :] = 0.0
         self.b_cbf.value[:, :] = 1e6
         self.A_cbf.value[:num_constraints, :] = A_cbf_val
         self.b_cbf.value[:num_constraints, :] = b_cbf_val
         
-        if self.debug:
-            viol = float(np.max(A_cbf_val @ self.u_ref.value - b_cbf_val))
-            print(f"[BackupCBFQP] num_constraints={num_constraints}, max_viol(u_ref)={viol:.3e}")
+        # if self.debug:
+        #     print(f"[BackupCBFQP] num_constraints={num_constraints}")
 
         # 8) Solve QP (GUROBI only; status is handled by tracking.py)
         t_start_qp = time.perf_counter()
@@ -370,9 +453,19 @@ class BackupCBFQP(OcclusionUtils):
         t_end_qp = time.perf_counter()
 
         qp_solve_time_ms = (t_end_qp - t_start_qp) * 1000
+        
+        self.last_num_constraints = num_constraints
+        self.last_qp_solve_time_ms = qp_solve_time_ms
+        self.last_u = np.array(self.u.value, dtype=float).reshape(-1, 1)
+        tol = float(self.robot_spec.get("intervention_tol", 1e-3))
+        if self.last_u_ref is not None:
+            delta = float(np.linalg.norm(self.last_u - self.last_u_ref))
+        else:
+            delta = float("inf")
+        self.last_intervention = "u_ref" if delta <= tol else "backup_qp"
 
-        if self.debug:
-            print(f"[BackupCBFQP] QP Solve Time: {qp_solve_time_ms:.3f} ms")
+        # if self.debug:
+        #     print(f"[BackupCBFQP] QP Solve Time: {qp_solve_time_ms:.3f} ms")
 
         self.status = self.cbf_controller.status
 

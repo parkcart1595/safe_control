@@ -247,36 +247,44 @@ class DoubleIntegrator2D:
             delta = R + v_expand * tau
             h_vec = (A @ p) - b0 - delta
 
-            # find active facets
-            active_indices = np.where(h_vec >= 0.0)[0]
-            if len(active_indices) > 0:
-                # find most critical facet
-                best_idx_in_active = np.argmin(h_vec[active_indices])
-                target_idx = active_indices[best_idx_in_active]
+            # # find active facets
+            # active_indices = np.where(h_vec >= 0.0)[0]
+            # if len(active_indices) > 0:
+            #     # find most critical facet
+            #     best_idx_in_active = np.argmin(h_vec[active_indices])
+            #     target_idx = active_indices[best_idx_in_active]
 
-                # choose the corresponding normal vector
-                selected_normal = A[target_idx]
+            #     # choose the corresponding normal vector
+            #     selected_normal = A[target_idx]
 
+            #     norm = np.linalg.norm(selected_normal)
+            #     if norm > 1e-9:
+            #         direction = selected_normal / norm
+            #         v_target = direction * vadv
+            #         A_stack.append(v_target)
+
+            active = (h_vec >= 0.0)  # outside wrt inflated poly
+            if np.any(active):
+                # calculate selected normal vectors
+                avg_normal = A[active].mean(axis=0)
+
+                # Calculate the magnitude normal vector
+                norm = np.linalg.norm(avg_normal)
+
+                if norm > 1e-9:
+                    direction = avg_normal / norm
+
+                    v_target = direction * vadv
+
+                    A_stack.append(v_target)
+            else:
+                best_idx = np.argmax(h_vec)
+                selected_normal = A[best_idx]
                 norm = np.linalg.norm(selected_normal)
                 if norm > 1e-9:
                     direction = selected_normal / norm
                     v_target = direction * vadv
                     A_stack.append(v_target)
-
-            # active = (h_vec >= 0.0)  # outside wrt inflated poly
-            # if np.any(active):
-            #     # calculate selected normal vectors
-            #     avg_normal = A[active].mean(axis=0)
-
-            #     # Calculate the magnitude normal vector
-            #     norm = np.linalg.norm(avg_normal)
-
-            #     if norm > 1e-9:
-            #         direction = avg_normal / norm
-
-            #         v_target = direction * vadv
-
-            #         A_stack.append(v_target)
 
         if len(A_stack) == 0:
             return np.zeros(2, dtype=float)
@@ -294,7 +302,7 @@ class DoubleIntegrator2D:
         else:
             v_ref = v_avg
         # print(f"DEBUG: v_ref from occlusion backup: {v_ref}")
-            
+        
         return v_avg
         
     def backup_input(self, X, k_a=1.0):

@@ -35,22 +35,10 @@ class BaseRobotDyn(BaseRobot):
         if self.robot_spec['model'] != 'KinematicBicycle2D_C3BF':
             return
         
-        # Remove previous collision cone patches
         if not hasattr(self, 'collision_cone_patches'):
-            self.collision_cone_patches = [] # Initialize attribute
-        
-        # Remove previous relative velocity arrows
+            self.collision_cone_patches = []
         if not hasattr(self, 'rel_vel_patches'):
             self.rel_vel_patches = []
-
-        for patch in list(self.collision_cone_patches):
-            if patch in ax.patches:
-                patch.remove()
-        self.collision_cone_patches.clear()
-
-        for arrow in self.rel_vel_patches:
-            arrow.remove()
-        self.rel_vel_patches.clear()
 
         robot_pos = self.get_position()
         theta = X[2, 0]
@@ -71,6 +59,38 @@ class BaseRobotDyn(BaseRobot):
             colors = plt.get_cmap('viridis')(np.linspace(0, 1, num_to_plot))
         else:
             colors = []
+
+        while len(self.collision_cone_patches) < num_to_plot:
+            patch = patches.Polygon(
+                np.zeros((3, 2)),
+                closed=True,
+                edgecolor='none',
+                linestyle='--',
+                alpha=0.5
+            )
+            patch.set_visible(False)
+            ax.add_patch(patch)
+            self.collision_cone_patches.append(patch)
+
+        while len(self.rel_vel_patches) < num_to_plot:
+            arrow = patches.FancyArrowPatch(
+                (0, 0), (0, 0),
+                arrowstyle='-|>',
+                mutation_scale=10,
+                color='k',
+                linewidth=1.0,
+                alpha=1.0
+            )
+            arrow.set_visible(False)
+            ax.add_patch(arrow)
+            self.rel_vel_patches.append(arrow)
+
+        if num_to_plot == 0:
+            for patch in self.collision_cone_patches:
+                patch.set_visible(False)
+            for arrow in self.rel_vel_patches:
+                arrow.set_visible(False)
+            return
 
         for i, obs in enumerate(closest_obs_list):
             obs = np.array(obs).flatten()
@@ -108,12 +128,10 @@ class BaseRobotDyn(BaseRobot):
 
             # Draw the cone
             cone_points = np.array ([robot_pos.tolist(), cone_left, cone_right])
-            collision_cone_patch = patches.Polygon( # only edgecolors different
-                cone_points, closed = True,
-                edgecolor=colors[i], linestyle='--', alpha=0.5, label=f"Obstacle {i}"
-            )
-            ax.add_patch(collision_cone_patch)
-            self.collision_cone_patches.append(collision_cone_patch)
+            collision_cone_patch = self.collision_cone_patches[i]
+            collision_cone_patch.set_xy(cone_points)
+            collision_cone_patch.set_edgecolor(colors[i])
+            collision_cone_patch.set_visible(True)
 
             offset_angle = 0.003 * (i - (len(obs_list)//2))
             R_offset = np.array([
@@ -122,10 +140,35 @@ class BaseRobotDyn(BaseRobot):
             ])
             v_rel_offset = R_offset @ v_rel
 
-            arrow = ax.arrow(float(robot_pos[0]), float(robot_pos[1]),
-                            float(v_rel_offset[0]), float(v_rel_offset[1]),
-                            color=colors[i], width=0.01, alpha=1.0)
-            self.rel_vel_patches.append(arrow)
+            v_rel_offset = np.asarray(v_rel_offset, dtype=float).reshape(2,)
+            speed = float(np.hypot(v_rel_offset[0], v_rel_offset[1]))
+            arrow = self.rel_vel_patches[i]
+            if speed < 1e-9:
+                arrow.set_visible(False)
+                continue
+
+            arrow_scale = 1.0
+            dx = float(v_rel_offset[0]) * arrow_scale
+            dy = float(v_rel_offset[1]) * arrow_scale
+            p0 = ax.transData.transform((float(robot_pos[0]), float(robot_pos[1])))
+            p1 = ax.transData.transform((float(robot_pos[0]) + dx, float(robot_pos[1]) + dy))
+            pix_len = float(np.hypot(p1[0] - p0[0], p1[1] - p0[1]))
+            dpi = float(ax.figure.dpi)
+            head_scale = max(2.0, min(8.0, pix_len * 72.0 / dpi * 0.25))
+
+            arrow.set_mutation_scale(head_scale)
+            arrow.set_positions(
+                (float(robot_pos[0]), float(robot_pos[1])),
+                (float(robot_pos[0]) + dx,
+                 float(robot_pos[1]) + dy)
+            )
+            arrow.set_color(colors[i])
+            arrow.set_visible(True)
+
+        for j in range(num_to_plot, len(self.collision_cone_patches)):
+            self.collision_cone_patches[j].set_visible(False)
+        for j in range(num_to_plot, len(self.rel_vel_patches)):
+            self.rel_vel_patches[j].set_visible(False)
 
     def draw_collision_parabola(self, X, obs_list, ax):
         '''
@@ -135,21 +178,10 @@ class BaseRobotDyn(BaseRobot):
         if self.robot_spec['model'] not in ['KinematicBicycle2D_DPCBF']:
             return
 
-        # Remove previous collision parabola plots
         if not hasattr(self, 'collision_parabola_patches'):
-            self.collision_parabola_patches = [] # Initialize attribute
-
-        # Remove previous relative velocity arrows
+            self.collision_parabola_patches = []
         if not hasattr(self, 'rel_vel_patches'):
             self.rel_vel_patches = []
-
-        for line in self.collision_parabola_patches:
-                line.remove()
-        self.collision_parabola_patches.clear()
-
-        for arrow in self.rel_vel_patches:
-                arrow.remove()
-        self.rel_vel_patches.clear()
 
         robot_pos = self.get_position()
 
@@ -168,6 +200,31 @@ class BaseRobotDyn(BaseRobot):
             colors = plt.get_cmap('viridis')(np.linspace(0, 1, num_to_plot))
         else:
             colors = []
+
+        while len(self.collision_parabola_patches) < num_to_plot:
+            line, = ax.plot([], [], color='k', linestyle='-', linewidth=2.0)
+            line.set_visible(False)
+            self.collision_parabola_patches.append(line)
+
+        while len(self.rel_vel_patches) < num_to_plot:
+            arrow = patches.FancyArrowPatch(
+                (0, 0), (0, 0),
+                arrowstyle='-|>',
+                mutation_scale=10,
+                color='k',
+                linewidth=1.0,
+                alpha=1.0
+            )
+            arrow.set_visible(False)
+            ax.add_patch(arrow)
+            self.rel_vel_patches.append(arrow)
+
+        if num_to_plot == 0:
+            for line in self.collision_parabola_patches:
+                line.set_visible(False)
+            for arrow in self.rel_vel_patches:
+                arrow.set_visible(False)
+            return
 
         for i, obs in enumerate(closest_obs_list):
 
@@ -210,10 +267,12 @@ class BaseRobotDyn(BaseRobot):
             x_disp = (-func_lambda * (y_disp**2) - func_mu)
 
             pts_world = robot_pos.reshape(2,1) + R.T @ np.vstack([x_disp, y_disp])
-            line, = ax.plot(pts_world[0,:], pts_world[1, :],
-                            color=colors[i], linestyle='-', linewidth=2.0,
-                            label=f"Quadratic Obs {i}")
-            self.collision_parabola_patches.append(line)
+            line = self.collision_parabola_patches[i]
+            line.set_data(pts_world[0, :], pts_world[1, :])
+            line.set_color(colors[i])
+            line.set_linestyle('-')
+            line.set_linewidth(2.0)
+            line.set_visible(True)
 
             offset_angle = 0.02 * (i - (len(obs_list)//2))
             R_offset = np.array([
@@ -221,14 +280,35 @@ class BaseRobotDyn(BaseRobot):
                 [np.sin(offset_angle),  np.cos(offset_angle)]
             ])
             v_rel_offset = R_offset @ v_rel
+            v_rel_offset = np.asarray(v_rel_offset, dtype=float).reshape(2,)
+            speed = float(np.hypot(v_rel_offset[0], v_rel_offset[1]))
+            arrow = self.rel_vel_patches[i]
+            if speed < 1e-9:
+                arrow.set_visible(False)
+                continue
 
-            x_offset = 1.0
-            y_offset = 1.0
-        
-            arrow = ax.arrow(float(robot_pos[0]), float(robot_pos[1]),
-                            float(x_offset * v_rel_offset[0]), float(y_offset * v_rel_offset[1]),
-                            color=colors[i], width=0.02, alpha=1.0)
-            self.rel_vel_patches.append(arrow)
+            arrow_scale = 1.0
+            dx = float(v_rel_offset[0]) * arrow_scale
+            dy = float(v_rel_offset[1]) * arrow_scale
+            p0 = ax.transData.transform((float(robot_pos[0]), float(robot_pos[1])))
+            p1 = ax.transData.transform((float(robot_pos[0]) + dx, float(robot_pos[1]) + dy))
+            pix_len = float(np.hypot(p1[0] - p0[0], p1[1] - p0[1]))
+            dpi = float(ax.figure.dpi)
+            head_scale = max(2.0, min(8.0, pix_len * 72.0 / dpi * 0.25))
+
+            arrow.set_mutation_scale(head_scale)
+            arrow.set_positions(
+                (float(robot_pos[0]), float(robot_pos[1])),
+                (float(robot_pos[0]) + dx,
+                 float(robot_pos[1]) + dy)
+            )
+            arrow.set_color(colors[i])
+            arrow.set_visible(True)
+
+        for j in range(num_to_plot, len(self.collision_parabola_patches)):
+            self.collision_parabola_patches[j].set_visible(False)
+        for j in range(num_to_plot, len(self.rel_vel_patches)):
+            self.rel_vel_patches[j].set_visible(False)
             
     def _circle_tangents_local(self, p, c, R):
         p = np.asarray(p, float).reshape(2,)
@@ -661,34 +741,29 @@ class BaseRobotDyn(BaseRobot):
                                   T_rollout=None,
                                   grid_res=0.05):
 
-        # 1) reset previous patches
-        self._clear_artists(self.occlusion_patches)
         self._clear_artists(self.occlusion_smax_contours)
-        self._clear_artists(self.occlusion_future_contours)
         self._clear_artists(self._occ_arc_lines)  # legacy list (no longer used)
         if not show_true_occ and not show_true_occ_T and not show_smax_occ_T:
+            for patch in self.occlusion_patches:
+                patch.set_visible(False)
+            for patch in self.occlusion_future_contours:
+                patch.set_visible(False)
             return
         if occlusion_scenarios is None or len(occlusion_scenarios) == 0:
+            for patch in self.occlusion_patches:
+                patch.set_visible(False)
+            for patch in self.occlusion_future_contours:
+                patch.set_visible(False)
             return
 
         import numpy as np
         import matplotlib.patches as patches
 
-        R = float(self.robot_spec.get('radius', 0.0))
-
-        for sc in occlusion_scenarios:
-            poly = sc.get('poly', None)   # U0 polygon: [t1,t2,far2,far1]
-            A    = sc.get('A', None)
-            b0   = sc.get('b0', None)
-            if poly is None or A is None or b0 is None:
-                continue
-
-            poly = np.asarray(poly, float)
-
-            # --- (A) True U0 polygon patch (no inflation, just geometric U0) ---
-            if show_true_occ:
+        num_scenarios = len(occlusion_scenarios)
+        if show_true_occ:
+            while len(self.occlusion_patches) < num_scenarios:
                 patch = patches.Polygon(
-                    poly,
+                    np.zeros((3, 2)),
                     closed=True,
                     fill=True,
                     facecolor='gray',
@@ -696,11 +771,54 @@ class BaseRobotDyn(BaseRobot):
                     alpha=0.25,
                     zorder=1
                 )
+                patch.set_visible(False)
                 self.ax.add_patch(patch)
                 self.occlusion_patches.append(patch)
+        else:
+            for patch in self.occlusion_patches:
+                patch.set_visible(False)
+
+        if show_true_occ_T:
+            while len(self.occlusion_future_contours) < num_scenarios:
+                patchT = patches.Polygon(
+                    np.zeros((3, 2)),
+                    closed=True,
+                    fill=True,
+                    facecolor="#e41d45",
+                    edgecolor='none',
+                    alpha=0.22,
+                    zorder=0.9
+                )
+                patchT.set_visible(False)
+                self.ax.add_patch(patchT)
+                self.occlusion_future_contours.append(patchT)
+        else:
+            for patch in self.occlusion_future_contours:
+                patch.set_visible(False)
+
+        for i, sc in enumerate(occlusion_scenarios):
+            poly = sc.get('poly', None)   # U0 polygon: [t1,t2,far2,far1]
+            A    = sc.get('A', None)
+            b0   = sc.get('b0', None)
+            if A is None or b0 is None:
+                if show_true_occ and i < len(self.occlusion_patches):
+                    self.occlusion_patches[i].set_visible(False)
+                if show_true_occ_T and i < len(self.occlusion_future_contours):
+                    self.occlusion_future_contours[i].set_visible(False)
+                continue
+
+            if show_true_occ:
+                patch = self.occlusion_patches[i]
+                if poly is None:
+                    patch.set_visible(False)
+                else:
+                    patch.set_xy(np.asarray(poly, float))
+                    patch.set_visible(True)
 
             # if no rollout requested, skip T-level plots
             if T_rollout is None or T_rollout <= 0.0:
+                if show_true_occ_T and i < len(self.occlusion_future_contours):
+                    self.occlusion_future_contours[i].set_visible(False)
                 continue
 
             if 'v_expand_vec' in sc:
@@ -718,13 +836,9 @@ class BaseRobotDyn(BaseRobot):
             if UT is not None:
                 # --- (B1) True UT patch ---
                 if show_true_occ_T:
-                    patchT = patches.Polygon(
-                        UT, closed=True, fill=True,
-                        facecolor="#e41d45", edgecolor='none',
-                        alpha=0.22, zorder=0.9
-                    )
-                    self.ax.add_patch(patchT)
-                    self.occlusion_future_contours.append(patchT)
+                    patchT = self.occlusion_future_contours[i]
+                    patchT.set_xy(UT)
+                    patchT.set_visible(True)
 
                 # --- (B2) Smooth-max levelset (h=0) for tau=T ---
                 if show_smax_occ_T:
@@ -748,6 +862,16 @@ class BaseRobotDyn(BaseRobot):
                     )
                     for coll in csT.collections:
                         self.occlusion_smax_contours.append(coll)
+            else:
+                if show_true_occ_T and i < len(self.occlusion_future_contours):
+                    self.occlusion_future_contours[i].set_visible(False)
+
+        if show_true_occ:
+            for j in range(num_scenarios, len(self.occlusion_patches)):
+                self.occlusion_patches[j].set_visible(False)
+        if show_true_occ_T:
+            for j in range(num_scenarios, len(self.occlusion_future_contours)):
+                self.occlusion_future_contours[j].set_visible(False)
 
         
     # def update_occlusion_polygons(self, occlusion_scenarios,

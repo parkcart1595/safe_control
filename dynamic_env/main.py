@@ -46,6 +46,12 @@ class LocalTrackingControllerDyn(LocalTrackingController):
         self.dyn_obs_patch = None # will be initialized after the first step
         self.init_obs_info = None
         self.init_obs_circle = None
+        self.qp_stats_text = None
+        self.backup_rollout_line = None
+        self.backup_safe_contour = []
+        self._backup_vis_counter = 0
+        self.show_backup_rollout = bool(self.robot_spec.get('show_backup_rollout', False))
+        self.backup_rollout_every = int(self.robot_spec.get('backup_rollout_every', 1))
         
         self._rng = np.random.default_rng(rand_seed)
         self.obs_meta = None
@@ -174,9 +180,22 @@ class LocalTrackingControllerDyn(LocalTrackingController):
             
             if self.obs.shape[0] > 0 and self.obs.shape[1] >= 5:
                 for _ in range(len(self.obs)):
-                    arrow = patches.Arrow(0, 0, 0, 0, width=0.2, color='orange', zorder=5)
+                    arrow = patches.FancyArrowPatch(
+                        (0, 0), (0, 0),
+                        arrowstyle='-|>',
+                        mutation_scale=10,
+                        color='orange',
+                        linewidth=1.0,
+                        zorder=5
+                    )
+                    arrow.set_visible(False)
                     self.ax.add_patch(arrow)
                     self.obs_vel_arrows.append(arrow)
+
+        speeds = np.hypot(self.obs[:, 3], self.obs[:, 4]) if len(self.obs) else np.array([])
+        v_ref = float(np.max(speeds)) if speeds.size else 1.0
+        if v_ref < 1e-9:
+            v_ref = 1.0
 
         for i, obs_info in enumerate(self.obs):
             # obs: [x, y, r, vx, vy]
@@ -188,17 +207,29 @@ class LocalTrackingControllerDyn(LocalTrackingController):
             if i < len(self.obs_vel_arrows):
                 vx, vy = obs_info[3], obs_info[4]
                 
-                # Remove the old arrow and add a new one to update its properties
-                # This is a robust way to handle patches in matplotlib animations
-                self.obs_vel_arrows[i].remove()
-                
-                # You can scale the vector length for better visualization, e.g., multiply by 0.5
-                arrow_scale = 1.0 
-                new_arrow = patches.Arrow(ox, oy, vx * arrow_scale, vy * arrow_scale, 
-                                          width=0.2, color='orange', zorder=5)
-                
-                self.ax.add_patch(new_arrow)
-                self.obs_vel_arrows[i] = new_arrow
+                arrow = self.obs_vel_arrows[i]
+                speed = float(np.hypot(vx, vy))
+                if speed < 1e-9:
+                    arrow.set_visible(False)
+                    continue
+
+                ux = float(vx / speed)
+                uy = float(vy / speed)
+                min_len = 0.3
+                max_len = 0.8
+                t = min(1.0, speed / v_ref)
+                length = min_len + (max_len - min_len) * np.sqrt(t)
+                dx = ux * length
+                dy = uy * length
+                p0 = self.ax.transData.transform((ox, oy))
+                p1 = self.ax.transData.transform((ox + dx, oy + dy))
+                pix_len = float(np.hypot(p1[0] - p0[0], p1[1] - p0[1]))
+                dpi = float(self.fig.dpi)
+                head_scale = max(2.0, min(8.0, pix_len * 72.0 / dpi * 0.25))
+
+                arrow.set_mutation_scale(head_scale)
+                arrow.set_positions((ox, oy), (ox + dx, oy + dy))
+                arrow.set_visible(True)
 
     def draw_plot(self, pause=0.01, force_save=False):
         if self.show_animation:
@@ -209,6 +240,8 @@ class LocalTrackingControllerDyn(LocalTrackingController):
                 self.init_obs_info = self.obs.copy()
                 
             self.render_dyn_obs()
+            self._update_qp_stats_text()
+            self._update_backup_rollout_plot()
 
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
@@ -228,6 +261,79 @@ class LocalTrackingControllerDyn(LocalTrackingController):
                                 "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".png", dpi=300)
                     # plt.savefig(self.current_directory_path +
                     #             "/output/animations/" + "t_step_" + str(self.ani_idx//self.save_per_frame).zfill(4) + ".svg")
+
+    def _update_backup_rollout_plot(self):
+        if not self.show_animation or not self.show_backup_rollout:
+            return
+        pos_controller = getattr(self, "pos_controller", None)
+        if pos_controller is None:
+            return
+        scenarios = getattr(pos_controller, "occlusion_scenarios", None)
+        if not scenarios:
+            if self.backup_rollout_line is not None:
+                self.backup_rollout_line.set_visible(False)
+            if self.backup_safe_contour:
+                self.robot._clear_artists(self.backup_safe_contour)
+            return
+
+        self._backup_vis_counter += 1
+        if self.backup_rollout_every > 1 and (self._backup_vis_counter % self.backup_rollout_every) != 0:
+            return
+
+        T = float(getattr(pos_controller, "T_horizon", 0.0))
+        if T <= 0.0:
+            return
+        dt_b = float(getattr(pos_controller, "dt_backup", self.dt))
+
+        try:
+            traj, _, _ = self.robot.simulate_backup_trajectory(
+                self.robot.X, T, dt_b, scenarios
+            )
+        except Exception:
+            return
+
+        xy = traj[:, 0:2]
+        if xy.size == 0:
+            return
+
+        if self.backup_rollout_line is None:
+            (line,) = self.ax.plot(
+                xy[:, 0], xy[:, 1],
+                linestyle='--', color='tab:green',
+                linewidth=2.0, alpha=0.9, zorder=2
+            )
+            self.backup_rollout_line = line
+        else:
+            self.backup_rollout_line.set_data(xy[:, 0], xy[:, 1])
+            self.backup_rollout_line.set_visible(True)
+
+        # Safe-harbor contour is intentionally disabled for now.
+
+    def _update_qp_stats_text(self):
+        if not self.show_animation:
+            return
+        pos_controller = getattr(self, "pos_controller", None)
+        if pos_controller is None:
+            return
+        num_constraints = getattr(pos_controller, "last_num_constraints", None)
+        qp_ms = getattr(pos_controller, "last_qp_solve_time_ms", None)
+        intervention = getattr(pos_controller, "last_intervention", None)
+        if num_constraints is None or qp_ms is None:
+            return
+        if intervention is None:
+            intervention = "unknown"
+        text = (
+            f"QP constraints: {num_constraints}, "
+            f"Solve time: {qp_ms:.3f} ms, "
+            f"Mode: {intervention}"
+        )
+        if self.qp_stats_text is None:
+            self.qp_stats_text = self.ax.text(
+                0.02, 0.98, text, transform=self.ax.transAxes,
+                ha='left', va='top', fontsize=9,
+                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=2.0))
+        else:
+            self.qp_stats_text.set_text(text)
 
     def control_step(self):
         '''
@@ -339,7 +445,7 @@ class LocalTrackingControllerDyn(LocalTrackingController):
                 self.pos_controller.occlusion_scenarios,
                 kappa=kappa,
                 show_true_occ=True,
-                show_true_occ_T=True,
+                show_true_occ_T=False,
                 show_smax_occ_T=False,
                 T_rollout=getattr(self.pos_controller, "T_horizon", 3.0),
                 grid_res=0.05,
@@ -417,11 +523,11 @@ def single_agent_main(controller_type):
     known_obs = np.array([
         # [8.0, 5.0, 0.5, 1],  # obstacle 1
         # [10.0, 7.0, 0.5, 1],  # obstacle 2
-        # [12.0, 11.0, 0.5, 1],  # obstacle 3
+        [12.0, 1.0, 0.5, 1],  # obstacle 3
         [14.0, 6.5, 0.5, 1],  # obstacle 4
         [16.0, 3.0, 0.5, 1],  # obstacle 5
         [18.0, 7.5, 0.5, 1],  # obstacle 6
-        [20.0, 8.9, 0.5, 1],  # obstacle 6
+        [20.0, 10.9, 0.5, 1],  # obstacle 6
         [22.0, 10.6, 0.5, 1],  # obstacle 6
         [24.0, 12.0, 0.5, 1],  # obstacle 7
     ])
@@ -474,13 +580,13 @@ def single_agent_main(controller_type):
     #     [10.0, 10.0, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
-    # # wall w/ straight dyn obs
+    # wall w/ straight dyn obs
     # known_obs = np.array([
-    #     [12.0, 5.0, 0.6, 0],  # obstacle 3
-    #     [13.0, 5.5, 0.6, 0],  # obstacle 5
-    #     [14.0, 6.0, 0.6, 0],  # obstacle 7
-    #     [15.0, 6.5, 0.6, 0],  # obstacle 9
-    #     [15.5, 2.0, 0.5, 0],  # obstacle 11
+    #     [12.0, 5.0, 0.6, 1],  # obstacle 3
+    #     [13.0, 5.5, 0.6, 1],  # obstacle 5
+    #     [14.0, 6.0, 0.6, 1],  # obstacle 7
+    #     [15.0, 6.5, 0.6, 1],  # obstacle 9
+    #     [15.5, 2.0, 0.5, 1],  # obstacle 11
     #     # [2.0, 5.0, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
@@ -494,7 +600,7 @@ def single_agent_main(controller_type):
             obs_type = int(obs_info[3])
         else:
             obs_type = 0
-        if i % 2 == 0:
+        if i % 2 == 1:
             vx, vy = -0.15, -0.15
         else:
             vx, vy = -0.15, 0.15
@@ -508,11 +614,11 @@ def single_agent_main(controller_type):
     known_obs = np.array(dynamic_obs, dtype=float)
 
     rand_rows, rand_meta = LocalTrackingControllerDyn.make_random_obstacles7(
-        n_rand=10,
+        n_rand=6,
         v_obs_max=0.5,
-        x_range=(15.0, 25.0),
+        x_range=(15.0, 30.0),
         y_spawn_range=(0.0, 15.0),
-        r_range=(0.2, 0.25),
+        r_range=(0.2, 0.4),
         y_bounds=(0.0, 15.0),
         seed=42,
         rand_obs= RAND_OBS_ENABLE,
@@ -538,7 +644,10 @@ def single_agent_main(controller_type):
             'a_max': 1.0,
             'radius': 0.25,
             'debug_backup_qp': True,
-            'sensing_range': 10.0
+            'sensing_range': 10.0,
+            'backup_cbf': {'T_horizon': 2.5},
+            'show_backup_rollout': True,
+            'backup_rollout_every': 1
         }
     elif model == 'DynamicUnicycle2D':
         robot_spec = {
@@ -608,6 +717,13 @@ def single_agent_main(controller_type):
     
     plot_handler = plotting.Plotting(width=env_width, height=env_height, known_obs=known_obs)
     ax, fig = plot_handler.plot_grid("") # you can set the title of the plot here
+    # view_scale = 1.3
+    # cx, cy = env_width / 2.0, env_height / 2.0
+    # half_w = env_width * view_scale / 2.0
+    # half_h = env_height * view_scale / 2.0
+    # ax.set_xlim(cx - half_w, cx + half_w)
+    # ax.set_ylim(cy - half_h, cy + half_h)
+
     env_handler = env.Env()
 
     tracking_controller = LocalTrackingControllerDyn(x_init, robot_spec,
