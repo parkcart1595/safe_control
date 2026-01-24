@@ -614,7 +614,7 @@ def single_agent_main(controller_type):
     known_obs = np.array(dynamic_obs, dtype=float)
 
     rand_rows, rand_meta = LocalTrackingControllerDyn.make_random_obstacles7(
-        n_rand=40,
+        n_rand=50,
         v_obs_max=0.5,
         x_range=(8.0, 30.0),
         y_spawn_range=(0.0, 15.0),
