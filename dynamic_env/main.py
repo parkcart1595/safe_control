@@ -520,39 +520,39 @@ def single_agent_main(controller_type):
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
     # Supermarket Scenario
-    known_obs = np.array([
-        # [8.0, 5.0, 0.5, 1],  # obstacle 1
-        # [10.0, 7.0, 0.5, 1],  # obstacle 2
-        [12.0, 1.0, 0.5, 1],  # obstacle 3
-        [14.0, 6.5, 0.5, 1],  # obstacle 4
-        [16.0, 3.0, 0.5, 1],  # obstacle 5
-        [18.0, 7.5, 0.5, 1],  # obstacle 6
-        [20.0, 10.9, 0.5, 1],  # obstacle 6
-        [22.0, 10.6, 0.5, 1],  # obstacle 6
-        [24.0, 12.0, 0.5, 1],  # obstacle 7
-    ])
+    # known_obs = np.array([
+    #     # [8.0, 5.0, 0.5, 1],  # obstacle 1
+    #     # [10.0, 7.0, 0.5, 1],  # obstacle 2
+    #     [12.0, 1.0, 0.5, 1],  # obstacle 3
+    #     [14.0, 6.5, 0.5, 1],  # obstacle 4
+    #     [16.0, 3.0, 0.5, 1],  # obstacle 5
+    #     [18.0, 7.5, 0.5, 1],  # obstacle 6
+    #     [20.0, 10.9, 0.5, 1],  # obstacle 6
+    #     [22.0, 10.6, 0.5, 1],  # obstacle 6
+    #     [24.0, 12.0, 0.5, 1],  # obstacle 7
+    # ])
     # LoS scenario static/dyn
     # known_obs = np.array([
     #     [15.0, 7.5, 0.5],  # obstacle 1
     # ])
     # Crowd Scenario
-    # known_obs = np.array([     
-    #     [8.0, 1.5, 0.3],    # obstacle 2
-    #     [9.0, 7.8, 0.3],    # obstacle 3
-    #     [10.0, 3.2, 0.3],   # obstacle 4
-    #     [11.0, 11.9, 0.3],  # obstacle 5
-    #     [12.0, 9.1, 0.3],   # obstacle 6
-    #     [13.0, 2.8, 0.3],   # obstacle 7
-    #     [14.0, 12.3, 0.3],  # obstacle 2
-    #     [15.0, 4.7, 0.3],   # obstacle 3
-    #     [16.0, 10.6, 0.3],  # obstacle 4
-    #     [17.0, 8.0, 0.3],   # obstacle 5
-    #     [18.0, 5.4, 0.3],   # obstacle 6
-    #     [19.0, 13.0, 0.3],  # obstacle 7
-    #     [20.0, 6.3, 0.3],   
-    #     [21.0, 8.9, 0.3],
-    #     [22.0, 5.4, 0.3],    # obstacle 1
-    # ])
+    known_obs = np.array([     
+        [8.0, 7.5, 0.3, 1],    # obstacle 2
+        # [9.0, 7.8, 0.3, 1],    # obstacle 3
+        # [10.0, 3.2, 0.3, 1],   # obstacle 4
+        # [11.0, 11.9, 0.3, 1],  # obstacle 5
+        # [12.0, 9.1, 0.3, 1],   # obstacle 6
+        # [13.0, 2.8, 0.3, 1],   # obstacle 7
+        # [14.0, 12.3, 0.3, 1],  # obstacle 2
+        # [15.0, 4.7, 0.3, 1],   # obstacle 3
+        # [16.0, 10.6, 0.3, 1],  # obstacle 4
+        # [17.0, 8.0, 0.3, 1],   # obstacle 5
+        # [18.0, 5.4, 0.3, 1],   # obstacle 6
+        # [19.0, 13.0, 0.3, 1],  # obstacle 7
+        # [20.0, 6.3, 0.3, 1],   
+        # [21.0, 8.9, 0.3, 1],
+        # [22.0, 5.4, 0.3, 1],    # obstacle 1
+    ])
     # known_obs = np.array([     
     #     [8.0, 1.5, 0.3],    # obstacle 2
     #     [9.0, 7.8, 0.3],    # obstacle 3
@@ -580,13 +580,13 @@ def single_agent_main(controller_type):
     #     [10.0, 10.0, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
-    # wall w/ straight dyn obs
+    # # wall w/ straight dyn obs
     # known_obs = np.array([
     #     [12.0, 5.0, 0.6, 1],  # obstacle 3
     #     [13.0, 5.5, 0.6, 1],  # obstacle 5
     #     [14.0, 6.0, 0.6, 1],  # obstacle 7
     #     [15.0, 6.5, 0.6, 1],  # obstacle 9
-    #     [15.5, 2.0, 0.5, 1],  # obstacle 11
+    #     [16.0, 7.0, 0.6, 1],  # obstacle 11
     #     # [2.0, 5.0, 0.5],  # obstacle 13
     #     # [22.0, 12.0, 0.5],  # obstacle 15
     # ])
@@ -614,11 +614,11 @@ def single_agent_main(controller_type):
     known_obs = np.array(dynamic_obs, dtype=float)
 
     rand_rows, rand_meta = LocalTrackingControllerDyn.make_random_obstacles7(
-        n_rand=6,
+        n_rand=40,
         v_obs_max=0.5,
-        x_range=(15.0, 30.0),
+        x_range=(8.0, 30.0),
         y_spawn_range=(0.0, 15.0),
-        r_range=(0.2, 0.4),
+        r_range=(0.3, 0.4),
         y_bounds=(0.0, 15.0),
         seed=42,
         rand_obs= RAND_OBS_ENABLE,
@@ -645,7 +645,7 @@ def single_agent_main(controller_type):
             'radius': 0.25,
             'debug_backup_qp': True,
             'sensing_range': 10.0,
-            'backup_cbf': {'T_horizon': 2.5},
+            'backup_cbf': {'T_horizon': 2.0},
             'show_backup_rollout': True,
             'backup_rollout_every': 1
         }

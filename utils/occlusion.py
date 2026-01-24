@@ -128,6 +128,7 @@ class OcclusionUtils:
                         [py - oy]])
         
         p_rel_mag = np.linalg.norm(p_rel)
+        p_rel_mag = max(p_rel_mag, 1e-6)
         arc_adv = v_adv * p_rel / p_rel_mag
         arc_adv = arc_adv.flatten()
 
