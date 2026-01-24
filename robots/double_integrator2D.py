@@ -469,21 +469,21 @@ class DoubleIntegrator2D:
 
         return J
     
-    def _aug_rhs(self, t, y, occlusion_scenarios=None, eps_A=1e-4):
-            """
-            RHS for augmented state y = [x; vec(Phi)].
-            y: (4 + 16,)
-            returns ydot: (4 + 16,)
-            """
-            x = y[:4].reshape(4, 1)
-            Phi = y[4:].reshape(4, 4)
+    # def _aug_rhs(self, t, y, occlusion_scenarios=None, eps_A=1e-4):
+    #     """
+    #     RHS for augmented state y = [x; vec(Phi)].
+    #     y: (4 + 16,)
+    #     returns ydot: (4 + 16,)
+    #     """
+    #     x = y[:4].reshape(4, 1)
+    #     Phi = y[4:].reshape(4, 4)
 
-            xdot = self.f_cl(x, occlusion_scenarios, t).reshape(4,)
+    #     xdot = self.f_cl(x, occlusion_scenarios, t).reshape(4,)
 
-            A = self.jac_f_cl_fd(x, occlusion_scenarios, t, eps=eps_A)  # (4,4)
-            Phidot = (A @ Phi).reshape(-1)
+    #     A = self.jac_f_cl_fd(x, occlusion_scenarios, t, eps=eps_A)  # (4,4)
+    #     Phidot = (A @ Phi).reshape(-1)
 
-            return np.concatenate([xdot, Phidot])
+    #     return np.concatenate([xdot, Phidot])
 
     def simulate_backup_trajectory(self, x0, T, dt, occlusion_scenarios=None, eps_A=1e-4):
         x = np.asarray(x0, float).reshape(4,1)
