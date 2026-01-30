@@ -172,17 +172,6 @@ class BackupCBFQP(OcclusionUtils):
         no_occ = (len(self.occlusion_scenarios) == 0)
         timings["filter_occ_ms"] = (time.perf_counter() - t0) * 1000
 
-        # if self.debug:
-        #     print(f"[BackupCBFQP] visible_obs={len(visible_obs)} occlusion_scenarios={len(self.occlusion_scenarios)}")
-        #     if visible_obs:
-        #         rx, ry = float(robot_state[0, 0]), float(robot_state[1, 0])
-        #         dists = []
-        #         for obs in visible_obs:
-        #             ox, oy, r_obs = float(obs[0]), float(obs[1]), float(obs[2])
-        #             dists.append(np.hypot(ox - rx, oy - ry) - r_obs)
-        #         if dists:
-        #             print(f"[BackupCBFQP] obs_dist_min={min(dists):.3f} obs_dist_max={max(dists):.3f}")
-
         # 2) If there is no obstacle and no occlusion, use nominal control
         if no_obs and no_occ:
             self.status = 'optimal'
@@ -205,21 +194,6 @@ class BackupCBFQP(OcclusionUtils):
             occlusion_scenarios=None if no_occ else self.occlusion_scenarios
         )
         timings["rollout_stm_ms"] = (time.perf_counter() - t0) * 1000
-
-        # if self.debug and not no_occ:
-        #     try:
-        #         min_h = float("inf")
-        #         for scenario in self.occlusion_scenarios:
-        #             for i, tau in enumerate(tau_points):
-        #                 pos_i = phi_b[i].reshape(-1, 1)[0:2]
-        #                 h_tilde, _, _ = self._occlusion_barrier_smax_curved(pos_i, scenario, tau)
-        #                 if h_tilde is None:
-        #                     continue
-        #                 min_h = min(min_h, float(h_tilde))
-        #         if min_h != float("inf"):
-        #             print(f"[BackupCBFQP] rollout_min_h={min_h:.3f}")
-        #     except Exception as e:
-        #         print(f"[BackupCBFQP][WARN] rollout_min_h check failed: {e}")
 
         # Pre-compute f(x), g(x) at current state for Lie derivatives
         f_x = self.robot.f(robot_state)   # (n,1)

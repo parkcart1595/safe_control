@@ -208,7 +208,7 @@ class DoubleIntegrator2D:
 
         return h_k, d_h, dd_h
     
-    # ---- Backup CBF ----
+    # ---- Occlusion-Aware Backup CBF for Double Integrator----
     def get_backup_horizon(self):
         return float(getattr(self, "T_horizon", 2.0))
 
@@ -313,7 +313,6 @@ class DoubleIntegrator2D:
         """
         return self.stop(X, k_a=k_a)
 
-    
     def backup_input_occlusion(self, X, occlusion_scenarios, t=None,
                             k_d=1.0, k_occ=1.0):
         # print(f"DEBUG: backup_input_occlusion CALLED with t={t}")
@@ -336,7 +335,6 @@ class DoubleIntegrator2D:
             if v[i] <= (-v_max + eps) and u[i] < 0.0: u[i] = 0.0
 
         return u.reshape(2,1)
-
 
     def f_cl(self, X, occlusion_scenarios=None, t=None):
         """
